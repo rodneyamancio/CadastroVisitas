@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useActionState } from 'react';
 import { entrar } from '../acoes';
 
@@ -27,6 +28,17 @@ export default function FormularioLogin() {
       <button type="submit" disabled={pendente} className="adm-botao w-full py-3">
         {pendente ? 'Entrando…' : 'Entrar'}
       </button>
+      <p className="text-center text-sm">
+        <Link href="/admin/esqueci-senha" className="font-semibold text-emerald-800 underline">
+          Esqueci minha senha
+        </Link>
+      </p>
+      <p className="border-t border-stone-200 pt-4 text-center text-sm text-stone-600">
+        Ainda não tem acesso?{' '}
+        <Link href="/admin/cadastro" className="font-semibold text-emerald-800 underline">
+          Pedir cadastro
+        </Link>
+      </p>
     </form>
   );
 }

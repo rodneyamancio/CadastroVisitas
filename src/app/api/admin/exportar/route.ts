@@ -1,4 +1,5 @@
 import ExcelJS from 'exceljs';
+import { registrar } from '@/lib/auditoria';
 import { usuarioAtual } from '@/lib/auth';
 import { PRECISOES, nomeDia, nomePeriodo } from '@/lib/config';
 import { lerFiltros, listarVisitas } from '@/lib/visitas';
@@ -66,6 +67,11 @@ export async function GET(req: Request) {
   cabecalho.height = 22;
   aba.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: aba.columns.length } };
 
+  await registrar('visita.exportada', usuario, null, {
+    visitas: visitas.length,
+    filtros: Object.entries(filtros).filter(([, v]) => v).map(([k, v]) => `${k}=${v}`).join(', ') || 'nenhum',
+    'dados de quem cadastrou': superAdmin ? 'incluídos' : 'não incluídos',
+  });
   const dados = await livro.xlsx.writeBuffer();
   const hoje = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date());
   return new Response(dados as ArrayBuffer, {

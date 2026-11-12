@@ -22,6 +22,10 @@ export default function FormularioIA(p: Props) {
 
   return (
     <form action={acao} className="space-y-5 rounded-xl border border-stone-200 bg-white p-5">
+      <div>
+        <h2 className="text-lg font-extrabold text-stone-900">Assistente de IA</h2>
+        <p className="text-sm text-stone-600">Conexão usada para organizar as visitas em roteiros.</p>
+      </div>
       <fieldset>
         <legend className="mb-2 text-sm font-semibold text-stone-800">Qual IA usar</legend>
         <div className="grid gap-2 sm:grid-cols-2">

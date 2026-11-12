@@ -70,6 +70,38 @@ CREATE TABLE IF NOT EXISTS configuracoes (
   valor TEXT NOT NULL
 );
 
+-- Senhas: convite pendente e versão (muda a cada troca de senha e encerra as sessões antigas)
+ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS senha_pendente BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS versao INT NOT NULL DEFAULT 1;
+-- Autocadastro: fica sem acesso até um super admin aprovar
+ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS aguardando_aprovacao BOOLEAN NOT NULL DEFAULT FALSE;
+
+-- Links de definição de senha enviados por e-mail (guardamos só o resumo do código)
+CREATE TABLE IF NOT EXISTS tokens_senha (
+  id SERIAL PRIMARY KEY,
+  usuario_id INT NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+  hash TEXT NOT NULL UNIQUE,
+  tipo TEXT NOT NULL CHECK (tipo IN ('convite', 'redefinicao')),
+  expira_em TIMESTAMPTZ NOT NULL,
+  usado_em TIMESTAMPTZ,
+  criado_em TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Auditoria: quem fez o quê, quando e de onde
+CREATE TABLE IF NOT EXISTS auditoria (
+  id BIGSERIAL PRIMARY KEY,
+  criado_em TIMESTAMPTZ NOT NULL DEFAULT now(),
+  usuario_id INT,
+  usuario TEXT,
+  acao TEXT NOT NULL,
+  alvo TEXT,
+  detalhes JSONB,
+  ip TEXT,
+  agente TEXT
+);
+CREATE INDEX IF NOT EXISTS auditoria_data ON auditoria (criado_em DESC);
+CREATE INDEX IF NOT EXISTS auditoria_acao ON auditoria (acao);
+
 -- Roteiros montados pelo assistente de IA
 CREATE TABLE IF NOT EXISTS roteiros (
   id SERIAL PRIMARY KEY,

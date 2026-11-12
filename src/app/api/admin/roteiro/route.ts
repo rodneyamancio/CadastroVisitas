@@ -1,4 +1,5 @@
 import ExcelJS from 'exceljs';
+import { registrar } from '@/lib/auditoria';
 import { usuarioAtual } from '@/lib/auth';
 import { nomeDia, nomePeriodo } from '@/lib/config';
 import { ultimoRoteiro } from '@/lib/roteiro';
@@ -8,7 +9,8 @@ export const dynamic = 'force-dynamic';
 
 // Planilha dos roteiros montados pelo assistente: uma linha por visita, na ordem sugerida.
 export async function GET() {
-  if (!(await usuarioAtual())) return new Response('Não autorizado', { status: 401 });
+  const usuario = await usuarioAtual();
+  if (!usuario) return new Response('Não autorizado', { status: 401 });
   const roteiro = await ultimoRoteiro();
   if (!roteiro) return new Response('Nenhum roteiro montado ainda', { status: 404 });
   const porId = new Map((await listarVisitas()).map((v) => [v.id, v]));
@@ -56,6 +58,7 @@ export async function GET() {
   cabecalho.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF047857' } };
   aba.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: aba.columns.length } };
 
+  await registrar('roteiro.exportado', usuario, null, { grupos: numero });
   const dados = await livro.xlsx.writeBuffer();
   return new Response(dados as ArrayBuffer, {
     headers: {

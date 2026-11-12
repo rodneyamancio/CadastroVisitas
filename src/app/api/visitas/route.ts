@@ -1,6 +1,7 @@
 import { NextResponse, after } from 'next/server';
+import { registrar } from '@/lib/auditoria';
 import { ipDoCliente } from '@/lib/auth';
-import { CIDADE_PADRAO, DIAS, PERIODOS, UF_PADRAO } from '@/lib/config';
+import { CIDADE_PADRAO, DIAS, PERIODOS, UF_PADRAO, nomeDia, nomePeriodo } from '@/lib/config';
 import { sql } from '@/lib/db';
 import { resumoDoAparelho } from '@/lib/dispositivo';
 import { dentroDaRegiao } from '@/lib/geocode';
@@ -87,6 +88,12 @@ export async function POST(req: Request) {
       JSON.stringify(extra),
     ],
   );
+
+  await registrar('visita.criada', { nome: 'Formulário público' }, `Nº ${nova.id} · ${nome}`, {
+    endereço: `${rua}, ${numero}`,
+    visita: `${nomeDia(dia)} · ${nomePeriodo(periodo)}`,
+    aparelho: extra.aparelho,
+  });
 
   if (precisao !== 'gps') {
     after(() => localizarVisita(nova.id).catch((e) => console.error('Falha ao localizar endereço', nova.id, e)));

@@ -36,9 +36,18 @@ docker compose -f docker-compose.yml -f docker-compose.dev.yml up
 - **Assistente de IA** (`/admin/assistente`): agrupa as visitas por dia, horário e proximidade em roteiros para
   as equipes, com ordem de visita, trajeto no Google Maps, impressão e exportação para Excel. A IA recebe só
   rua, número, bairro, dia, horário e posição (nomes e telefones não são enviados).
-- **Usuários** (`/admin/usuarios`, só super admin): cadastrar, mudar perfil, desativar, redefinir senha e excluir.
+- **Usuários** (`/admin/usuarios`, só super admin): cadastrar (com convite por e-mail para a pessoa criar a senha
+  ou com a senha definida na hora), aprovar ou recusar pedidos de acesso, mudar perfil, desativar, enviar link de
+  nova senha e excluir.
+- **Pedir cadastro** (`/admin/cadastro`): qualquer pessoa pode pedir acesso como admin. O pedido fica aguardando a
+  aprovação de um super admin, que é avisado por e-mail.
+- **Senhas**: "Minha conta" para trocar a própria senha e "Esqueci minha senha" na tela de entrada. Trocar a senha
+  encerra as sessões abertas em outros aparelhos.
+- **Auditoria** (`/admin/auditoria`, só super admin): quem fez o quê, quando e de onde (acessos, senhas, usuários,
+  visitas, exportações, roteiros, configurações e e-mails).
 - **Configurações** (`/admin/configuracoes`, só super admin): conexão do assistente com a Anthropic (Claude) ou
-  a OpenAI. A chave de API fica cifrada no banco.
+  a OpenAI e envio de e-mail pelo Resend (chave, remetente, e-mail de teste e prévia dos e-mails). As chaves de
+  API ficam cifradas no banco.
 
 Perfis: **super admin** (tudo, inclusive usuários, configurações e os dados de quem cadastrou: IP e aparelho) e
 **admin** (visitas, mapa, site, assistente e exportação).
@@ -54,6 +63,8 @@ Perfis: **super admin** (tudo, inclusive usuários, configurações e os dados d
 - Atrás de um proxy (Nginx, Caddy), publique a aplicação só em `127.0.0.1` com `APP_PORT=127.0.0.1:3290` e
   repasse os cabeçalhos `X-Forwarded-For` e `X-Forwarded-Proto`: é deles que saem o IP de quem cadastrou e o
   cookie seguro do painel.
+- Para os e-mails, crie uma chave em resend.com e verifique o domínio do remetente na conta do Resend. Em
+  produção, preencha `APP_URL` no `.env`: é o endereço usado nos links dos e-mails.
 - A chave que cifra as chaves de API vem do `SESSION_SECRET`: se ele mudar, informe as chaves de novo.
 - Os dados ficam no volume Docker `pgdata`. Backup:
   `docker compose exec db sh -c 'pg_dump -U $POSTGRES_USER $POSTGRES_DB' > backup.sql`
