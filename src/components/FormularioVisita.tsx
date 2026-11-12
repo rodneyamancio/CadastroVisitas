@@ -127,6 +127,7 @@ export default function FormularioVisita() {
   const [enviado, setEnviado] = useState<Campos | null>(null);
   const [site, setSite] = useState('');
   const carregou = useRef(false);
+  const bairroAuto = useRef('');
   const camposVistos = useRef(new Set<string>());
   const inicio = useRef<number | null>(null);
 
@@ -206,8 +207,24 @@ export default function FormularioVisita() {
     if (local?.fonte === 'sugestao') setLocal(null);
   }
 
+  // Preenche o bairro sozinho, sem apagar o que a pessoa escreveu à mão.
+  function preencherBairro(bairro: string) {
+    if (!bairro) return;
+    setF((a) => {
+      if (a.bairro && a.bairro !== bairroAuto.current) return a;
+      bairroAuto.current = bairro;
+      return { ...a, bairro };
+    });
+  }
+
   function escolherSugestao(s: Sugestao) {
-    setF((a) => ({ ...a, rua: s.rua, bairro: s.bairro || a.bairro }));
+    setF((a) => ({ ...a, rua: s.rua }));
+    // O bairro certo vem dos Correios, pela rua; se a consulta falhar, fica o distrito do mapa.
+    const consulta = new URLSearchParams({ rua: s.rua, cidade: s.cidade, uf: s.uf, cep: s.cep });
+    fetch(`/api/endereco/bairro?${consulta}`)
+      .then((r) => r.json() as Promise<{ bairro?: string | null }>)
+      .then((d) => preencherBairro(d.bairro || s.bairro))
+      .catch(() => preencherBairro(s.bairro));
     setErros((e) => ({ ...e, rua: undefined }));
     if (local?.fonte !== 'gps') setLocal({ lat: s.lat, lng: s.lng, fonte: 'sugestao', cidade: s.cidade, uf: s.uf, cep: s.cep });
     setBusca('');
@@ -215,52 +232,93 @@ export default function FormularioVisita() {
     document.getElementById('campo-numero')?.focus();
   }
 
-  function usarLocalizacao() {
+  // O primeiro sinal do celular costuma ser grosseiro (antena, centenas de metros de erro) e
+  // cai na rua errada. Por isso espera alguns segundos e fica com a leitura mais exata.
+  function lerPosicao(): Promise<GeolocationPosition> {
+    return new Promise((ok, falha) => {
+      let melhor: GeolocationPosition | null = null;
+      let esgotou = false;
+      let acabou = false;
+      const terminar = (erro?: GeolocationPositionError) => {
+        if (acabou) return;
+        acabou = true;
+        navigator.geolocation.clearWatch(id);
+        clearTimeout(prazo);
+        clearTimeout(limite);
+        if (melhor) ok(melhor);
+        else falha(erro);
+      };
+      const id = navigator.geolocation.watchPosition(
+        (pos) => {
+          if (!melhor || pos.coords.accuracy < melhor.coords.accuracy) melhor = pos;
+          if (pos.coords.accuracy <= 25 || esgotou) terminar();
+        },
+        (erro) => terminar(erro),
+        { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 },
+      );
+      const prazo = setTimeout(() => {
+        esgotou = true;
+        if (melhor) terminar();
+      }, 8000);
+      const limite = setTimeout(() => terminar(), 20000);
+    });
+  }
+
+  async function usarLocalizacao() {
     marcarCampo('gps');
     if (!('geolocation' in navigator)) {
       setGps({ estado: 'erro', aviso: 'Este celular não informou a localização. Escreva o nome da rua no campo abaixo.' });
       return;
     }
     setGps({ estado: 'buscando' });
-    navigator.geolocation.getCurrentPosition(
-      async (pos) => {
-        const { latitude: lat, longitude: lng, accuracy } = pos.coords;
-        let achado: Sugestao | null = null;
-        let fora = false;
-        try {
-          const r = await fetch('/api/endereco/reverso', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ lat, lng }),
-          });
-          const d = (await r.json()) as { endereco?: Sugestao | null; fora?: boolean };
-          achado = d.endereco ?? null;
-          fora = Boolean(d.fora);
-        } catch {}
-        if (fora) {
-          setGps({ estado: 'erro', aviso: 'A localização do celular está fora da região atendida. Escreva o nome da rua no campo abaixo.' });
-          return;
-        }
-        setLocal({ lat, lng, fonte: 'gps', precisaoM: accuracy, cidade: achado?.cidade ?? '', uf: achado?.uf ?? '', cep: achado?.cep ?? '' });
-        if (achado) {
-          setF((a) => ({ ...a, rua: achado.rua, bairro: achado.bairro || a.bairro }));
-          setErros((e) => ({ ...e, rua: undefined }));
-        }
-        setBusca('');
-        setSugestoes(null);
-        setGps({ estado: 'parado' });
-      },
-      (erro) => {
-        setGps({
-          estado: 'erro',
-          aviso:
-            erro.code === erro.PERMISSION_DENIED
-              ? 'O celular não permitiu ver a localização. Sem problema: escreva o nome da rua no campo abaixo.'
-              : 'Não conseguimos encontrar a localização agora. Escreva o nome da rua no campo abaixo.',
-        });
-      },
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 },
-    );
+    let pos: GeolocationPosition;
+    try {
+      pos = await lerPosicao();
+    } catch (erro) {
+      const negou = (erro as GeolocationPositionError | undefined)?.code === 1;
+      setGps({
+        estado: 'erro',
+        aviso: negou
+          ? 'O celular não permitiu ver a localização. Sem problema: escreva o nome da rua no campo abaixo.'
+          : 'Não conseguimos encontrar a localização agora. Escreva o nome da rua no campo abaixo.',
+      });
+      return;
+    }
+    const { latitude: lat, longitude: lng, accuracy } = pos.coords;
+    if (accuracy > 300) {
+      // Com erro de centenas de metros a rua encontrada seria outra: melhor não preencher nada.
+      setGps({
+        estado: 'erro',
+        aviso: 'O celular não conseguiu uma localização exata aqui. Escreva o nome da rua no campo abaixo.',
+      });
+      return;
+    }
+    let achado: Sugestao | null = null;
+    let fora = false;
+    try {
+      const r = await fetch('/api/endereco/reverso', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lat, lng }),
+      });
+      const d = (await r.json()) as { endereco?: Sugestao | null; fora?: boolean };
+      achado = d.endereco ?? null;
+      fora = Boolean(d.fora);
+    } catch {}
+    if (fora) {
+      setGps({ estado: 'erro', aviso: 'A localização do celular está fora da região atendida. Escreva o nome da rua no campo abaixo.' });
+      return;
+    }
+    setLocal({ lat, lng, fonte: 'gps', precisaoM: accuracy, cidade: achado?.cidade ?? '', uf: achado?.uf ?? '', cep: achado?.cep ?? '' });
+    if (achado) {
+      const { rua, bairro } = achado;
+      setF((a) => ({ ...a, rua }));
+      preencherBairro(bairro);
+      setErros((e) => ({ ...e, rua: undefined }));
+    }
+    setBusca('');
+    setSugestoes(null);
+    setGps({ estado: 'parado' });
   }
 
   function irParaErro(e: Erros) {
@@ -297,6 +355,7 @@ export default function FormularioVisita() {
           cidade: local?.cidade ?? '',
           uf: local?.uf ?? '',
           cep: local?.cep ?? '',
+          bairroAutomatico: Boolean(f.bairro) && f.bairro === bairroAuto.current,
           tela: `${window.innerWidth}x${window.innerHeight}`,
           fuso: Intl.DateTimeFormat().resolvedOptions().timeZone,
           visitante: idVisitante(),
@@ -478,7 +537,11 @@ export default function FormularioVisita() {
           )}
           {local?.fonte === 'gps' && (
             <p className="mt-2 flex items-center justify-between gap-3 rounded-xl bg-emerald-50 p-3 text-base font-semibold text-emerald-900" role="status">
-              <span>✓ Localização do celular guardada. Confira a rua e escreva o número.</span>
+              <span>
+                {(local.precisaoM ?? 0) > 80
+                  ? '✓ Localização aproximada guardada. Confira se a rua está certa e escreva o número.'
+                  : '✓ Localização do celular guardada. Confira a rua e escreva o número.'}
+              </span>
               <button type="button" onClick={() => setLocal(null)} className="shrink-0 rounded-lg px-2 py-1 font-bold underline">
                 Remover
               </button>

@@ -6,7 +6,8 @@ import { sql } from '@/lib/db';
 import { resumoDoAparelho } from '@/lib/dispositivo';
 import { dentroDaRegiao } from '@/lib/geocode';
 import { dentroDoLimite } from '@/lib/limite';
-import { localizarVisita } from '@/lib/visitas';
+import { avisarNovaVisita } from '@/lib/mcp/sessoes';
+import { conferirBairro, localizarVisita } from '@/lib/visitas';
 
 const texto = (v: unknown, max: number) => (typeof v === 'string' ? v.trim().replace(/\s+/g, ' ').slice(0, max) : '');
 
@@ -95,8 +96,14 @@ export async function POST(req: Request) {
     aparelho: extra.aparelho,
   });
 
-  if (precisao !== 'gps') {
-    after(() => localizarVisita(nova.id).catch((e) => console.error('Falha ao localizar endereço', nova.id, e)));
-  }
+  // Depois de responder: confere o bairro pela rua e pelo número (Correios) e acha a casa no mapa.
+  // O bairro escrito à mão por quem cadastrou é respeitado; o preenchido sozinho pode ser trocado.
+  const bairroAutomatico = c.bairroAutomatico === true;
+  after(async () => {
+    await conferirBairro(nova.id, bairroAutomatico).catch((e) => console.error('Falha ao conferir bairro', nova.id, e));
+    // Avisa quem está conectado pelo MCP (já com o bairro conferido)
+    await avisarNovaVisita(nova.id).catch((e) => console.error('Falha ao avisar pelo MCP', nova.id, e));
+    if (precisao !== 'gps') await localizarVisita(nova.id).catch((e) => console.error('Falha ao localizar endereço', nova.id, e));
+  });
   return NextResponse.json({ ok: true, id: nova.id });
 }

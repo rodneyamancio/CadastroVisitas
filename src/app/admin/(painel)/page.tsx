@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { exigirUsuario } from '@/lib/auth';
 import { DIAS, PERIODOS, PRECISOES, nomeDia, nomePeriodo } from '@/lib/config';
 import { enderecoCompleto, filtrosParaUrl, lerFiltros, listarVisitas, resumoVisitas, type Visita } from '@/lib/visitas';
+import BotaoBairros from './BotaoBairros';
 import BotaoExcluir from './BotaoExcluir';
 import SeletorVisao, { type Visao } from './SeletorVisao';
 
@@ -133,6 +134,7 @@ export default async function Painel({ searchParams }: { searchParams: Promise<R
           </h1>
           <div className="flex flex-wrap items-center gap-2">
             <SeletorVisao atual={visao} />
+            <BotaoBairros />
             <Link href="/admin/assistente" className="adm-botao-sec py-2.5">
               <svg viewBox="0 0 24 24" className="h-5 w-5 text-emerald-700" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 <path d="M12 3l1.8 4.7L18.5 9.5l-4.7 1.8L12 16l-1.8-4.7L5.5 9.5l4.7-1.8zM19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z" />

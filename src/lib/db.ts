@@ -102,6 +102,23 @@ CREATE TABLE IF NOT EXISTS auditoria (
 CREATE INDEX IF NOT EXISTS auditoria_data ON auditoria (criado_em DESC);
 CREATE INDEX IF NOT EXISTS auditoria_acao ON auditoria (acao);
 
+-- Bairro: valor original quando o sistema troca pelo bairro dos Correios
+ALTER TABLE visitas ADD COLUMN IF NOT EXISTS bairro_informado TEXT;
+
+-- Tokens de acesso ao servidor MCP (guardamos só o resumo). "visto_*" marca até onde
+-- o dono do token já viu as novidades.
+CREATE TABLE IF NOT EXISTS tokens_mcp (
+  id SERIAL PRIMARY KEY,
+  usuario_id INT NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+  nome TEXT NOT NULL,
+  hash TEXT NOT NULL UNIQUE,
+  final TEXT NOT NULL,
+  criado_em TIMESTAMPTZ NOT NULL DEFAULT now(),
+  ultimo_uso TIMESTAMPTZ,
+  visto_visita INT NOT NULL DEFAULT 0,
+  visto_usuario INT NOT NULL DEFAULT 0
+);
+
 -- Roteiros montados pelo assistente de IA
 CREATE TABLE IF NOT EXISTS roteiros (
   id SERIAL PRIMARY KEY,

@@ -14,6 +14,7 @@ export default async function PainelLayout({ children }: { children: React.React
     { href: '/admin/mapa', nome: 'Mapa de calor' },
     { href: '/admin/site', nome: 'Site' },
     { href: '/admin/assistente', nome: 'Assistente de IA' },
+    { href: '/admin/mcp', nome: 'MCP' },
     ...(usuario.perfil === 'super_admin'
       ? [
           { href: '/admin/usuarios', nome: 'Usuários', aviso: pedidos },

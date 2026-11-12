@@ -11,10 +11,11 @@ import { sql } from '@/lib/db';
 import { ErroEmail, emailPronto, emails, enviarEmail } from '@/lib/email';
 import { ErroIA, testarConexao } from '@/lib/ia';
 import { dentroDoLimite } from '@/lib/limite';
+import { aprovarPedidoDeAcesso, recusarPedidoDeAcesso } from '@/lib/pedidos';
 import { montarRoteiro, ultimoRoteiro } from '@/lib/roteiro';
 import { conferirSenha, hashSenha } from '@/lib/senha';
 import { criarToken, validadeEmTexto } from '@/lib/tokens';
-import { enderecoCompleto, listarVisitas, localizarVisita, type Visita } from '@/lib/visitas';
+import { enderecoCompleto, listarVisitas, localizarVisita, reconferirBairros, type BairroCorrigido, type Visita } from '@/lib/visitas';
 
 export type Retorno = { erro?: string; ok?: string; valores?: { nome?: string; email: string; perfil?: string; modo?: string } } | undefined;
 
@@ -86,6 +87,29 @@ export async function localizarPendentes(): Promise<void> {
   }
   await registrar('visita.localizar', eu, null, { tentados: pendentes.length, localizados });
   revalidatePath('/admin', 'layout');
+}
+
+export type RetornoBairros = { erro?: string; conferidas?: number; iguais?: number; naoAchadas?: number; corrigidas?: BairroCorrigido[] } | undefined;
+
+// Olha de novo o bairro de todas as visitas pela rua (Correios) e corrige os que estiverem diferentes.
+export async function conferirBairros(): Promise<RetornoBairros> {
+  const eu = await exigirUsuario();
+  if (!dentroDoLimite(`bairros:${eu.id}`, 6, 10 * 60_000)) return { erro: 'Você já conferiu os bairros várias vezes agora há pouco. Aguarde alguns minutos.' };
+  try {
+    const r = await reconferirBairros();
+    await registrar('visita.bairros', eu, null, {
+      conferidas: r.conferidas,
+      corrigidas: r.corrigidas.length,
+      'sem mudança': r.iguais,
+      'rua não encontrada': r.naoAchadas,
+      mudanças: r.corrigidas.slice(0, 40).map((c) => `Nº ${c.id}: ${c.antes || '(sem bairro)'} → ${c.depois}`).join(' · ') || undefined,
+    });
+    revalidatePath('/admin', 'layout');
+    return r;
+  } catch (e) {
+    console.error('Falha ao conferir bairros', e);
+    return { erro: 'Não foi possível conferir os bairros agora. Tente de novo em instantes.' };
+  }
 }
 
 // ---------- Usuários (só super admin) ----------
@@ -208,31 +232,12 @@ export async function excluirUsuario(id: number): Promise<void> {
 // Pedidos de acesso feitos pelo autocadastro: o super admin aprova ou recusa.
 export async function aprovarPedido(id: number): Promise<void> {
   const eu = await exigirSuperAdmin();
-  const [u] = await sql<UsuarioBanco>(
-    'UPDATE usuarios SET ativo = TRUE, aguardando_aprovacao = FALSE WHERE id = $1 AND aguardando_aprovacao RETURNING *',
-    [id],
-  );
-  if (!u) voltar('invalido');
-  await registrar('usuario.aprovado', eu, `${u.nome} <${u.email}>`, { perfil: nomePerfil(u.perfil) });
-  if (await emailPronto()) {
-    await enviarEmail({ para: u.email, ...emails.acessoAprovado(u.nome, `${await urlBase()}/admin/login`) }).catch((e) =>
-      registrar('email.falha', eu, `${u.nome} <${u.email}>`, { email: 'acesso aprovado', motivo: e instanceof ErroEmail ? e.message : 'erro inesperado' }),
-    );
-  }
-  voltar('aprovado');
+  voltar((await aprovarPedidoDeAcesso(id, eu)) ? 'aprovado' : 'invalido');
 }
 
 export async function recusarPedido(id: number): Promise<void> {
   const eu = await exigirSuperAdmin();
-  const [u] = await sql<UsuarioBanco>('DELETE FROM usuarios WHERE id = $1 AND aguardando_aprovacao RETURNING *', [id]);
-  if (!u) voltar('invalido');
-  await registrar('usuario.recusado', eu, `${u.nome} <${u.email}>`);
-  if (await emailPronto()) {
-    await enviarEmail({ para: u.email, ...emails.acessoRecusado(u.nome) }).catch((e) =>
-      registrar('email.falha', eu, `${u.nome} <${u.email}>`, { email: 'acesso recusado', motivo: e instanceof ErroEmail ? e.message : 'erro inesperado' }),
-    );
-  }
-  voltar('recusado');
+  voltar((await recusarPedidoDeAcesso(id, eu)) ? 'recusado' : 'invalido');
 }
 
 // ---------- Conexão com a IA (só super admin) ----------

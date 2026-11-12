@@ -7,6 +7,8 @@ import { criarSessao, exigirSuperAdmin, exigirUsuario, ipDoCliente, urlBase } fr
 import { sql } from '@/lib/db';
 import { ErroEmail, configuracaoEmail, emailPronto, emails, enviarEmail, gravarConfigEmail } from '@/lib/email';
 import { dentroDoLimite } from '@/lib/limite';
+import { avisarNovoPedido, encerrarSessoesDoToken } from '@/lib/mcp/sessoes';
+import { MAX_TOKENS, criarTokenMcp, listarTokensMcp, revogarTokenMcp } from '@/lib/mcp/tokens';
 import { conferirSenha, hashSenha } from '@/lib/senha';
 import { criarToken, lerToken, usarToken, validadeEmTexto } from '@/lib/tokens';
 
@@ -118,10 +120,11 @@ export async function pedirAcesso(_anterior: RetornoPedido, fd: FormData): Promi
   const [existe] = await sql('SELECT 1 FROM usuarios WHERE email = $1', [email]);
   if (existe) return falhou('Já existe um cadastro ou um pedido com este e-mail. Se for seu, use "Esqueci minha senha" na tela de entrada.');
 
-  await sql(
-    `INSERT INTO usuarios (nome, email, senha_hash, perfil, ativo, aguardando_aprovacao) VALUES ($1, $2, $3, 'admin', FALSE, TRUE)`,
+  const [novo] = await sql<{ id: number }>(
+    `INSERT INTO usuarios (nome, email, senha_hash, perfil, ativo, aguardando_aprovacao) VALUES ($1, $2, $3, 'admin', FALSE, TRUE) RETURNING id`,
     [nome, email, hashSenha(nova.senha)],
   );
+  await avisarNovoPedido({ id: novo.id, nome, email }).catch((e) => console.error('Falha ao avisar pelo MCP', e));
   await registrar('usuario.pedido', { nome: `${nome} <${email}>` }, null, { perfil: 'Admin', situação: 'aguardando aprovação do super admin' });
 
   // Avisa todos os super admins por e-mail (se o envio estiver configurado).
@@ -176,4 +179,29 @@ export async function salvarEmail(_anterior: RetornoConta, fd: FormData): Promis
   revalidatePath('/admin', 'layout');
   if (!chave) return { erro: 'Remetente salvo, mas falta a chave de API do Resend.' };
   return { ok: testar ? `E-mail de teste enviado para ${para}. Configuração salva.` : 'Configuração de e-mail salva.' };
+}
+
+// ---------- Tokens de acesso ao servidor MCP ----------
+
+export type RetornoToken = { erro?: string; token?: string; nome?: string } | undefined;
+
+export async function criarMeuTokenMcp(_anterior: RetornoToken, fd: FormData): Promise<RetornoToken> {
+  const eu = await exigirUsuario();
+  const nome = campo(fd, 'nome').replace(/\s+/g, ' ').slice(0, 60);
+  if (nome.length < 2) return { erro: 'Dê um nome para lembrar onde o token será usado. Exemplo: Claude no meu computador.' };
+  if ((await listarTokensMcp(eu.id)).length >= MAX_TOKENS) return { erro: `Você já tem ${MAX_TOKENS} tokens. Revogue um que não usa mais para criar outro.` };
+  const token = await criarTokenMcp(eu.id, nome);
+  await registrar('mcp.token.criado', eu, nome, { final: `…${token.slice(-4)}` });
+  revalidatePath('/admin/mcp');
+  return { token, nome };
+}
+
+export async function revogarMeuTokenMcp(id: number): Promise<void> {
+  const eu = await exigirUsuario();
+  const t = await revogarTokenMcp(id, eu.id);
+  if (t) {
+    await encerrarSessoesDoToken(t.id);
+    await registrar('mcp.token.revogado', eu, t.nome, { final: `…${t.final}` });
+  }
+  revalidatePath('/admin/mcp');
 }

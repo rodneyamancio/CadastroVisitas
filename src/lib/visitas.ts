@@ -1,3 +1,4 @@
+import { bairroDaRua, semAcento } from './bairro';
 import { DIAS, PERIODOS } from './config';
 import { sql } from './db';
 import { enderecoDoPonto, localizarEndereco } from './geocode';
@@ -106,7 +107,7 @@ export async function localizarVisita(id: number): Promise<boolean> {
   if (!v || v.precisao === 'gps' || v.precisao === 'numero') return false;
   const pos = await localizarEndereco({ rua: v.endereco, numero: v.numero, bairro: v.bairro, cidade: v.cidade, uf: v.uf });
   if (!pos) return false;
-  // Quem escreveu a rua sem escolher na lista fica sem bairro: usa o bairro do ponto encontrado.
+  // Sem bairro nem nos Correios: fica o distrito do ponto encontrado, só como referência.
   let bairro = '';
   if (!v.bairro) bairro = (await enderecoDoPonto(pos.lat, pos.lng).catch(() => null))?.bairro ?? '';
   await sql(
@@ -117,4 +118,55 @@ export async function localizarVisita(id: number): Promise<boolean> {
     [id, pos.lat, pos.lng, pos.precisao, bairro, pos.cep],
   );
   return true;
+}
+
+export type ResultadoBairro = { situacao: 'corrigido' | 'igual' | 'nao_achou' | 'mantido'; antes: string; depois: string };
+
+// Confere o bairro pela rua na base dos Correios. Com "sobrescrever", troca também o bairro
+// que já estava gravado (o valor antigo fica guardado em bairro_informado).
+export async function conferirBairro(id: number, sobrescrever: boolean): Promise<ResultadoBairro> {
+  const [v] = await sql<Visita>('SELECT * FROM visitas WHERE id = $1', [id]);
+  const antes = v?.bairro ?? '';
+  if (!v) return { situacao: 'nao_achou', antes, depois: antes };
+  if (antes && !sobrescrever) return { situacao: 'mantido', antes, depois: antes };
+  const achado = await bairroDaRua({ rua: v.endereco, numero: v.numero, cidade: v.cidade, uf: v.uf, cep: v.cep });
+  if (!achado) return { situacao: 'nao_achou', antes, depois: antes };
+  if (semAcento(achado.bairro) === semAcento(antes)) {
+    await sql('UPDATE visitas SET cep = $2 WHERE id = $1', [id, achado.cep]);
+    return { situacao: 'igual', antes, depois: antes };
+  }
+  await sql(
+    `UPDATE visitas SET bairro = $2, cep = $3,
+       bairro_informado = COALESCE(bairro_informado, NULLIF($4, ''))
+     WHERE id = $1`,
+    [id, achado.bairro, achado.cep, antes],
+  );
+  return { situacao: 'corrigido', antes, depois: achado.bairro };
+}
+
+export type BairroCorrigido = { id: number; responsavel: string; endereco: string; antes: string; depois: string };
+
+// Confere de novo o bairro de todas as visitas (ou das escolhidas) pela rua, na base dos Correios.
+export async function reconferirBairros(ids?: number[]) {
+  const visitas = await sql<{ id: number; responsavel: string; endereco: string; numero: string }>(
+    `SELECT id, responsavel, endereco, numero FROM visitas ${ids?.length ? 'WHERE id = ANY($1::int[])' : ''} ORDER BY endereco, id`,
+    ids?.length ? [ids] : [],
+  );
+  const corrigidas: BairroCorrigido[] = [];
+  let iguais = 0;
+  let naoAchadas = 0;
+  let proxima = 0;
+  // Poucas consultas ao mesmo tempo, para não abusar do serviço dos Correios
+  const trabalhar = async () => {
+    while (proxima < visitas.length) {
+      const v = visitas[proxima++];
+      const r = await conferirBairro(v.id, true).catch(() => null);
+      if (!r || r.situacao === 'nao_achou') naoAchadas++;
+      else if (r.situacao === 'corrigido') corrigidas.push({ id: v.id, responsavel: v.responsavel, endereco: `${v.endereco}, ${v.numero}`, antes: r.antes, depois: r.depois });
+      else iguais++;
+    }
+  };
+  await Promise.all([trabalhar(), trabalhar(), trabalhar()]);
+  corrigidas.sort((a, b) => a.id - b.id);
+  return { conferidas: visitas.length, corrigidas, iguais, naoAchadas };
 }

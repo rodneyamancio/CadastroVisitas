@@ -24,6 +24,7 @@ export const ACOES: Record<string, string> = {
   'visita.excluida': 'Excluiu visita',
   'visita.exportada': 'Exportou visitas para Excel',
   'visita.localizar': 'Mandou localizar endereços no mapa',
+  'visita.bairros': 'Conferiu os bairros pela rua',
   'roteiro.gerado': 'Montou roteiros com IA',
   'roteiro.falha': 'Falha ao montar roteiros',
   'roteiro.exportado': 'Exportou roteiros para Excel',
@@ -31,6 +32,11 @@ export const ACOES: Record<string, string> = {
   'config.email': 'Alterou o envio de e-mail',
   'email.teste': 'Enviou e-mail de teste',
   'email.falha': 'Falha ao enviar e-mail',
+  'mcp.token.criado': 'Criou token de acesso ao MCP',
+  'mcp.token.revogado': 'Revogou token de acesso ao MCP',
+  'mcp.conectou': 'Conectou pelo MCP',
+  'mcp.ferramenta': 'Consultou pelo MCP',
+  'mcp.recusado': 'Acesso ao MCP recusado',
 };
 
 export const CATEGORIAS = [
@@ -41,6 +47,7 @@ export const CATEGORIAS = [
   { valor: 'roteiro', nome: 'Roteiros' },
   { valor: 'config', nome: 'Configurações' },
   { valor: 'email', nome: 'E-mails' },
+  { valor: 'mcp', nome: 'MCP' },
 ] as const;
 
 type Autor = { id: number; nome: string; email: string } | { nome: string } | null;

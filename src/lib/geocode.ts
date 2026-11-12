@@ -52,10 +52,12 @@ function deFoton(item: PhotonItem): Sugestao | null {
   const rua = p.type === 'house' ? p.street : p.type === 'street' ? p.name : p.street;
   const [lng, lat] = item.geometry.coordinates;
   if (!rua || !dentroDaRegiao(lat, lng)) return null;
-  const bairro = p.locality || p.district || '';
+  // No mapa aberto o "locality" vem errado em boa parte da região (um mesmo bairro para tudo em volta).
+  // Aqui fica só o distrito, como referência; o bairro certo vem dos Correios (lib/bairro.ts).
+  const bairro = p.district || p.locality || '';
   const cidade = p.city || p.county || '';
   const uf = p.state ? (UFS[p.state] ?? p.state) : '';
-  const partes = [bairro, p.district && p.district !== bairro ? p.district : '', cidade && uf ? `${cidade} - ${uf}` : cidade];
+  const partes = [bairro, cidade && uf ? `${cidade} - ${uf}` : cidade];
   return { rua, bairro, cidade, uf, cep: p.postcode || '', detalhe: partes.filter(Boolean).join(' · '), lat, lng };
 }
 
