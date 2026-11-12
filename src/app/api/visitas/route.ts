@@ -2,6 +2,7 @@ import { NextResponse, after } from 'next/server';
 import { ipDoCliente } from '@/lib/auth';
 import { CIDADE_PADRAO, DIAS, PERIODOS, UF_PADRAO } from '@/lib/config';
 import { sql } from '@/lib/db';
+import { resumoDoAparelho } from '@/lib/dispositivo';
 import { dentroDaRegiao } from '@/lib/geocode';
 import { dentroDoLimite } from '@/lib/limite';
 import { localizarVisita } from '@/lib/visitas';
@@ -15,7 +16,8 @@ export async function POST(req: Request) {
   // Campo invisível: pessoas não preenchem, robôs sim.
   if (texto(c.site, 50)) return NextResponse.json({ ok: true });
 
-  if (!dentroDoLimite(`cadastro:${await ipDoCliente()}`, 120, 10 * 60_000)) {
+  const ip = await ipDoCliente();
+  if (!dentroDoLimite(`cadastro:${ip}`, 120, 10 * 60_000)) {
     return NextResponse.json({ erro: 'Muitos cadastros em pouco tempo. Aguarde alguns minutos e tente de novo.' }, { status: 429 });
   }
 
@@ -47,10 +49,23 @@ export async function POST(req: Request) {
     lng = null;
   }
 
+  // Dados de quem preencheu (auditoria, visíveis só para o super admin)
+  const agente = (req.headers.get('user-agent') ?? '').slice(0, 400);
+  const tempo = Number(c.tempoS);
+  const extra = {
+    aparelho: resumoDoAparelho(agente),
+    idioma: (req.headers.get('accept-language') ?? '').split(',')[0].slice(0, 20),
+    tela: texto(c.tela, 20),
+    fuso: texto(c.fuso, 60),
+    visitante: texto(c.visitante, 64),
+    tempoS: Number.isFinite(tempo) && tempo >= 0 && tempo < 86_400 ? Math.round(tempo) : null,
+    usouGps: c.fonte === 'gps',
+  };
+
   const [nova] = await sql<{ id: number }>(
     `INSERT INTO visitas (responsavel, telefone, endereco, numero, complemento, bairro, cidade, uf, cep, observacoes,
-                          data_visita, periodo, lat, lng, precisao)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) RETURNING id`,
+                          data_visita, periodo, lat, lng, precisao, ip, agente, extra)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18) RETURNING id`,
     [
       nome,
       telefone,
@@ -67,6 +82,9 @@ export async function POST(req: Request) {
       lat,
       lng,
       precisao,
+      ip,
+      agente || null,
+      JSON.stringify(extra),
     ],
   );
 

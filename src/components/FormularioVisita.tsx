@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { DIAS, PERIODOS } from '@/lib/config';
+import { idVisitante, iniciarRastreio, rastrear } from '@/lib/rastreio';
 
 type Sugestao = { rua: string; bairro: string; cidade: string; uf: string; cep: string; detalhe: string; lat: number; lng: number };
 type Local = { lat: number; lng: number; fonte: 'gps' | 'sugestao'; precisaoM?: number; cidade: string; uf: string; cep: string };
@@ -59,7 +60,7 @@ function validar(f: Campos): Erros {
 
 function Passo({ n, titulo, children }: { n: number; titulo: string; children: React.ReactNode }) {
   return (
-    <section className="cartao" aria-labelledby={`passo-${n}`}>
+    <section className="cartao" data-mapa={`passo-${n}`} aria-labelledby={`passo-${n}`}>
       <h2 id={`passo-${n}`} className="mb-5 flex items-center gap-3 text-2xl font-extrabold text-stone-900">
         <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-700 text-xl text-white" aria-hidden="true">
           {n}
@@ -82,6 +83,7 @@ function Opcao(props: {
 }) {
   return (
     <label
+      data-mapa={`${props.grupo}-${props.valor}`}
       className={`flex min-h-28 cursor-pointer flex-col items-center justify-center gap-1 rounded-2xl border-2 p-3 text-center select-none has-focus-visible:ring-4 has-focus-visible:ring-emerald-200 ${
         props.marcado ? 'border-emerald-700 bg-emerald-700 text-white shadow-md' : 'border-stone-400 bg-white text-stone-900 active:bg-stone-100'
       }`}
@@ -125,9 +127,27 @@ export default function FormularioVisita() {
   const [enviado, setEnviado] = useState<Campos | null>(null);
   const [site, setSite] = useState('');
   const carregou = useRef(false);
+  const camposVistos = useRef(new Set<string>());
+  const inicio = useRef<number | null>(null);
+
+  // Navegação anônima do site (acessos, toques, campos). Com "?mapa" a página é só a
+  // imagem de fundo do mapa de calor do painel: não registra nada nem usa rascunho.
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).has('mapa')) return;
+    return iniciarRastreio();
+  }, []);
+
+  function marcarCampo(chave: string) {
+    const campo = chave.startsWith('dia-') ? 'dia' : chave.startsWith('periodo-') ? 'periodo' : chave === 'sem-numero' ? 'numero' : chave;
+    if (campo.startsWith('passo-') || camposVistos.current.has(campo)) return;
+    camposVistos.current.add(campo);
+    inicio.current ??= Date.now();
+    rastrear({ tipo: 'campo', chave: campo });
+  }
 
   // Rascunho: se a página fechar sem querer, o que já foi escrito não se perde.
   useEffect(() => {
+    if (new URLSearchParams(window.location.search).has('mapa')) return;
     try {
       const salvo = localStorage.getItem(RASCUNHO);
       if (salvo) {
@@ -175,6 +195,7 @@ export default function FormularioVisita() {
 
   function mudar<K extends keyof Campos>(campo: K, valor: Campos[K]) {
     setF((a) => ({ ...a, [campo]: valor }));
+    if (campo === 'dia' || campo === 'periodo') marcarCampo(campo);
     if (campo in erros) setErros((e) => ({ ...e, [campo]: undefined }));
     setFalha('');
   }
@@ -195,6 +216,7 @@ export default function FormularioVisita() {
   }
 
   function usarLocalizacao() {
+    marcarCampo('gps');
     if (!('geolocation' in navigator)) {
       setGps({ estado: 'erro', aviso: 'Este celular não informou a localização. Escreva o nome da rua no campo abaixo.' });
       return;
@@ -255,6 +277,7 @@ export default function FormularioVisita() {
     const e = validar(f);
     setErros(e);
     if (Object.keys(e).length) {
+      rastrear({ tipo: 'tentativa', dados: { erros: Object.keys(e) } });
       irParaErro(e);
       return;
     }
@@ -274,6 +297,10 @@ export default function FormularioVisita() {
           cidade: local?.cidade ?? '',
           uf: local?.uf ?? '',
           cep: local?.cep ?? '',
+          tela: `${window.innerWidth}x${window.innerHeight}`,
+          fuso: Intl.DateTimeFormat().resolvedOptions().timeZone,
+          visitante: idVisitante(),
+          tempoS: inicio.current ? (Date.now() - inicio.current) / 1000 : null,
           site,
         }),
       });
@@ -282,6 +309,9 @@ export default function FormularioVisita() {
         try {
           localStorage.removeItem(RASCUNHO);
         } catch {}
+        rastrear({ tipo: 'cadastro' });
+        camposVistos.current.clear();
+        inicio.current = null;
         setEnviado(f);
         setF(VAZIO);
         setLocal(null);
@@ -343,6 +373,7 @@ export default function FormularioVisita() {
         </dl>
         <button
           type="button"
+          data-mapa="outra-familia"
           onClick={() => {
             setEnviado(null);
             window.scrollTo({ top: 0 });
@@ -358,9 +389,18 @@ export default function FormularioVisita() {
   const mostrarLista = busca.trim().length >= 3 && (buscando || sugestoes !== null);
 
   return (
-    <form onSubmit={enviar} onKeyDown={aoTeclar} noValidate className="space-y-5">
+    <form
+      onSubmit={enviar}
+      onKeyDown={aoTeclar}
+      onFocus={(ev) => {
+        const chave = ev.target.closest('[data-mapa]')?.getAttribute('data-mapa');
+        if (chave) marcarCampo(chave);
+      }}
+      noValidate
+      className="space-y-5"
+    >
       <Passo n={1} titulo="Quem mora na casa">
-        <div>
+        <div data-mapa="nome">
           <label htmlFor="campo-nome" className="rotulo">
             Nome completo do responsável pela casa
           </label>
@@ -386,7 +426,7 @@ export default function FormularioVisita() {
           )}
         </div>
 
-        <div>
+        <div data-mapa="telefone">
           <label htmlFor="campo-telefone" className="rotulo">
             Telefone de contato
           </label>
@@ -417,7 +457,7 @@ export default function FormularioVisita() {
       </Passo>
 
       <Passo n={2} titulo="Endereço da família">
-        <div>
+        <div data-mapa="gps">
           <button
             type="button"
             onClick={usarLocalizacao}
@@ -447,7 +487,7 @@ export default function FormularioVisita() {
           <p className="mt-3 text-center text-base text-stone-500">ou escreva o endereço:</p>
         </div>
 
-        <div>
+        <div data-mapa="rua">
           <label htmlFor="campo-rua" className="rotulo">
             Rua ou avenida
           </label>
@@ -507,7 +547,7 @@ export default function FormularioVisita() {
           )}
         </div>
 
-        <div>
+        <div data-mapa="numero">
           <label htmlFor="campo-numero" className="rotulo">
             Número da casa
           </label>
@@ -532,7 +572,7 @@ export default function FormularioVisita() {
               {erros.numero}
             </p>
           )}
-          <label className="mt-3 flex cursor-pointer items-center gap-3 py-1 text-lg text-stone-800 select-none">
+          <label data-mapa="sem-numero" className="mt-3 flex cursor-pointer items-center gap-3 py-1 text-lg text-stone-800 select-none">
             <input
               type="checkbox"
               tabIndex={-1}
@@ -547,7 +587,7 @@ export default function FormularioVisita() {
           </label>
         </div>
 
-        <div>
+        <div data-mapa="complemento">
           <label htmlFor="campo-complemento" className="rotulo">
             Complemento <span className="opcional">(se tiver)</span>
           </label>
@@ -565,7 +605,7 @@ export default function FormularioVisita() {
           />
         </div>
 
-        <div>
+        <div data-mapa="bairro">
           <label htmlFor="campo-bairro" className="rotulo">
             Bairro <span className="opcional">(se souber)</span>
           </label>
@@ -584,7 +624,7 @@ export default function FormularioVisita() {
           />
         </div>
 
-        <div>
+        <div data-mapa="obs">
           <label htmlFor="campo-obs" className="rotulo">
             Como achar a casa <span className="opcional">(se quiser)</span>
           </label>
@@ -645,6 +685,7 @@ export default function FormularioVisita() {
 
       <button
         type="submit"
+        data-mapa="enviar"
         disabled={enviando}
         className="w-full rounded-2xl bg-emerald-700 px-6 py-5 text-2xl font-extrabold text-white shadow-lg active:bg-emerald-800 disabled:opacity-70"
       >

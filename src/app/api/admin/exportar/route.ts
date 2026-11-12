@@ -8,7 +8,9 @@ export const dynamic = 'force-dynamic';
 const quando = new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short', timeZone: 'America/Sao_Paulo' });
 
 export async function GET(req: Request) {
-  if (!(await usuarioAtual())) return new Response('Não autorizado', { status: 401 });
+  const usuario = await usuarioAtual();
+  if (!usuario) return new Response('Não autorizado', { status: 401 });
+  const superAdmin = usuario.perfil === 'super_admin';
 
   const filtros = lerFiltros(Object.fromEntries(new URL(req.url).searchParams));
   const visitas = await listarVisitas(filtros);
@@ -33,6 +35,15 @@ export async function GET(req: Request) {
     { header: 'Longitude', key: 'lng', width: 12 },
     { header: 'Precisão no mapa', key: 'precisao', width: 22 },
     { header: 'Cadastrado em', key: 'criado_em', width: 18 },
+    // Dados de quem preencheu: só na planilha do super admin
+    ...(superAdmin
+      ? [
+          { header: 'IP de quem cadastrou', key: 'ip', width: 18 },
+          { header: 'Aparelho', key: 'aparelho', width: 28 },
+          { header: 'Tempo preenchendo (s)', key: 'tempo', width: 12 },
+          { header: 'Navegador', key: 'agente', width: 50 },
+        ]
+      : []),
   ];
   const telefone = (t: string) =>
     t.length === 11 ? `(${t.slice(0, 2)}) ${t.slice(2, 7)}-${t.slice(7)}` : t.length === 10 ? `(${t.slice(0, 2)}) ${t.slice(2, 6)}-${t.slice(6)}` : t;
@@ -44,6 +55,8 @@ export async function GET(req: Request) {
       periodo: nomePeriodo(v.periodo),
       precisao: v.precisao ? PRECISOES[v.precisao] : 'Não localizado',
       criado_em: quando.format(v.criado_em),
+      aparelho: v.extra?.aparelho ?? '',
+      tempo: v.extra?.tempoS ?? '',
     });
   }
   const cabecalho = aba.getRow(1);

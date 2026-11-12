@@ -10,11 +10,18 @@ export default async function PainelLayout({ children }: { children: React.React
   const links = [
     { href: '/admin', nome: 'Visitas' },
     { href: '/admin/mapa', nome: 'Mapa de calor' },
-    ...(usuario.perfil === 'super_admin' ? [{ href: '/admin/usuarios', nome: 'Usuários' }] : []),
+    { href: '/admin/site', nome: 'Site' },
+    { href: '/admin/assistente', nome: 'Assistente de IA' },
+    ...(usuario.perfil === 'super_admin'
+      ? [
+          { href: '/admin/usuarios', nome: 'Usuários' },
+          { href: '/admin/configuracoes', nome: 'Configurações' },
+        ]
+      : []),
   ];
   return (
     <div className="min-h-dvh">
-      <header className="border-b border-stone-200 bg-white">
+      <header className="border-b border-stone-200 bg-white print:hidden">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3">
           <span className="text-lg font-extrabold text-emerald-800">Painel de visitas</span>
           <nav className="flex flex-wrap gap-1" aria-label="Seções do painel">

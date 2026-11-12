@@ -1,8 +1,10 @@
+import { cookies } from 'next/headers';
 import Link from 'next/link';
 import { exigirUsuario } from '@/lib/auth';
 import { DIAS, PERIODOS, PRECISOES, nomeDia, nomePeriodo } from '@/lib/config';
 import { enderecoCompleto, filtrosParaUrl, lerFiltros, listarVisitas, resumoVisitas, type Visita } from '@/lib/visitas';
 import BotaoExcluir from './BotaoExcluir';
+import SeletorVisao, { type Visao } from './SeletorVisao';
 
 function telefoneFormatado(t: string) {
   if (t.length === 11) return `(${t.slice(0, 2)}) ${t.slice(2, 7)}-${t.slice(7)}`;
@@ -17,8 +19,41 @@ function linkMapa(v: Visita) {
 
 const quando = new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short', timeZone: 'America/Sao_Paulo' });
 
+function tempoDePreenchimento(s: number | null | undefined) {
+  if (s == null) return 'não medido';
+  return s < 60 ? `${s} s` : `${Math.floor(s / 60)} min ${s % 60} s`;
+}
+
+// Só o super admin vê: IP e aparelho de quem preencheu o cadastro.
+function QuemCadastrou({ v }: { v: Visita }) {
+  const e = v.extra ?? {};
+  return (
+    <details className="mt-2 rounded-lg bg-stone-50 px-3 py-2 text-sm">
+      <summary className="cursor-pointer font-semibold text-stone-700">Quem cadastrou (IP e aparelho)</summary>
+      <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-stone-700">
+        <dt className="text-stone-500">IP</dt>
+        <dd className="font-mono">{v.ip ?? 'não registrado'}</dd>
+        <dt className="text-stone-500">Aparelho</dt>
+        <dd>{e.aparelho ?? 'não registrado'}</dd>
+        <dt className="text-stone-500">Tela</dt>
+        <dd>{e.tela || 'não informada'}</dd>
+        <dt className="text-stone-500">Idioma / fuso</dt>
+        <dd>{[e.idioma, e.fuso].filter(Boolean).join(' · ') || 'não informado'}</dd>
+        <dt className="text-stone-500">Tempo preenchendo</dt>
+        <dd>{tempoDePreenchimento(e.tempoS)}</dd>
+        <dt className="text-stone-500">Localização do celular</dt>
+        <dd>{e.usouGps ? 'usou' : 'não usou'}</dd>
+        <dt className="text-stone-500">Navegador</dt>
+        <dd className="break-all text-xs">{v.agente ?? 'não registrado'}</dd>
+      </dl>
+    </details>
+  );
+}
+
 export default async function Painel({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
-  await exigirUsuario();
+  const usuario = await exigirUsuario();
+  const superAdmin = usuario.perfil === 'super_admin';
+  const visao: Visao = (await cookies()).get('visao')?.value === 'tabela' ? 'tabela' : 'cards';
   const filtros = lerFiltros(await searchParams);
   const [visitas, resumo] = await Promise.all([listarVisitas(filtros), resumoVisitas()]);
   const consulta = filtrosParaUrl(filtros);
@@ -96,19 +131,28 @@ export default async function Painel({ searchParams }: { searchParams: Promise<R
             {visitas.length} {visitas.length === 1 ? 'visita cadastrada' : 'visitas cadastradas'}
             {filtrando && <span className="font-normal text-stone-500"> (com os filtros)</span>}
           </h1>
-          <a href={`/api/admin/exportar${consulta ? `?${consulta}` : ''}`} className="adm-botao" download>
-            <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="M12 4v11m0 0-4-4m4 4 4-4M5 20h14" />
-            </svg>
-            Exportar para Excel
-          </a>
+          <div className="flex flex-wrap items-center gap-2">
+            <SeletorVisao atual={visao} />
+            <Link href="/admin/assistente" className="adm-botao-sec py-2.5">
+              <svg viewBox="0 0 24 24" className="h-5 w-5 text-emerald-700" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M12 3l1.8 4.7L18.5 9.5l-4.7 1.8L12 16l-1.8-4.7L5.5 9.5l4.7-1.8zM19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z" />
+              </svg>
+              Assistente de IA
+            </Link>
+            <a href={`/api/admin/exportar${consulta ? `?${consulta}` : ''}`} className="adm-botao" download>
+              <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M12 4v11m0 0-4-4m4 4 4-4M5 20h14" />
+              </svg>
+              Exportar para Excel
+            </a>
+          </div>
         </div>
 
         {visitas.length === 0 ? (
           <p className="rounded-xl border border-dashed border-stone-300 bg-white p-8 text-center text-stone-600">
             {filtrando ? 'Nenhuma visita encontrada com estes filtros.' : 'Ainda não há visitas cadastradas.'}
           </p>
-        ) : (
+        ) : visao === 'cards' ? (
           <ul className="grid gap-3 lg:grid-cols-2">
             {visitas.map((v) => (
               <li key={v.id} className="rounded-xl border border-stone-200 bg-white p-4">
@@ -137,9 +181,61 @@ export default async function Painel({ searchParams }: { searchParams: Promise<R
                 <p className="mt-2 text-xs text-stone-500">
                   Cadastrado em {quando.format(v.criado_em)} · No mapa: {v.precisao ? PRECISOES[v.precisao] : 'ainda não localizado'}
                 </p>
+                {superAdmin && <QuemCadastrou v={v} />}
               </li>
             ))}
           </ul>
+        ) : (
+          <div className="overflow-x-auto rounded-xl border border-stone-200 bg-white">
+            <table className="w-full min-w-[56rem] border-collapse text-left text-sm">
+              <thead className="bg-stone-50 text-xs text-stone-600 uppercase">
+                <tr>
+                  <th className="px-3 py-2.5 font-semibold">Responsável</th>
+                  <th className="px-3 py-2.5 font-semibold">Telefone</th>
+                  <th className="px-3 py-2.5 font-semibold">Endereço</th>
+                  <th className="px-3 py-2.5 font-semibold">Bairro</th>
+                  <th className="px-3 py-2.5 font-semibold">Dia</th>
+                  <th className="px-3 py-2.5 font-semibold">Horário</th>
+                  <th className="px-3 py-2.5 font-semibold">Cadastrado em</th>
+                  {superAdmin && <th className="px-3 py-2.5 font-semibold">IP / aparelho</th>}
+                  <th className="px-3 py-2.5 font-semibold">
+                    <span className="sr-only">Ações</span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-stone-100">
+                {visitas.map((v) => (
+                  <tr key={v.id} className="align-top hover:bg-stone-50">
+                    <td className="px-3 py-2.5 font-semibold text-stone-900">{v.responsavel}</td>
+                    <td className="px-3 py-2.5 whitespace-nowrap">
+                      <a href={`https://wa.me/55${v.telefone}`} target="_blank" rel="noopener noreferrer" className="text-emerald-800 underline">
+                        {telefoneFormatado(v.telefone)}
+                      </a>
+                    </td>
+                    <td className="px-3 py-2.5">
+                      <a href={linkMapa(v)} target="_blank" rel="noopener noreferrer" className="text-emerald-800 underline">
+                        {[`${v.endereco}, ${v.numero}`, v.complemento].filter(Boolean).join(' - ')}
+                      </a>
+                      {v.observacoes && <div className="text-xs text-stone-500">{v.observacoes}</div>}
+                    </td>
+                    <td className="px-3 py-2.5">{v.bairro ?? ''}</td>
+                    <td className="px-3 py-2.5 whitespace-nowrap">{nomeDia(v.data_visita)}</td>
+                    <td className="px-3 py-2.5">{nomePeriodo(v.periodo)}</td>
+                    <td className="px-3 py-2.5 whitespace-nowrap text-stone-600">{quando.format(v.criado_em)}</td>
+                    {superAdmin && (
+                      <td className="px-3 py-2.5 text-xs text-stone-600">
+                        <div className="font-mono">{v.ip ?? 'sem IP'}</div>
+                        <div>{v.extra?.aparelho ?? ''}</div>
+                      </td>
+                    )}
+                    <td className="px-3 py-2.5 text-right">
+                      <BotaoExcluir id={v.id} nome={v.responsavel} />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </section>
     </div>

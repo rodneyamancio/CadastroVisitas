@@ -28,12 +28,20 @@ docker compose -f docker-compose.yml -f docker-compose.dev.yml up
 
 - **Formulário** (`/`): responsável, telefone, endereço (sugestão de ruas ou localização do celular), número,
   complemento, bairro, ponto de referência, dia (sábado 28/11 ou domingo 29/11) e horário (manhã ou tarde).
-- **Painel** (`/admin`): lista com busca e filtros, totais por dia/horário, exclusão e **exportação para Excel**
-  (respeita os filtros).
+- **Visitas** (`/admin`): lista em cards ou tabela, busca e filtros, totais por dia/horário, exclusão e
+  **exportação para Excel** (respeita os filtros).
 - **Mapa de calor** (`/admin/mapa`): filtros por dia e horário, casas individuais e ranking por bairro.
+- **Site** (`/admin/site`): quantas pessoas entram, até que etapa do formulário chegam, quantas cadastram,
+  onde o envio trava, aparelho usado e mapa de calor dos toques no formulário. Os dados são anônimos.
+- **Assistente de IA** (`/admin/assistente`): agrupa as visitas por dia, horário e proximidade em roteiros para
+  as equipes, com ordem de visita, trajeto no Google Maps, impressão e exportação para Excel. A IA recebe só
+  rua, número, bairro, dia, horário e posição (nomes e telefones não são enviados).
 - **Usuários** (`/admin/usuarios`, só super admin): cadastrar, mudar perfil, desativar, redefinir senha e excluir.
+- **Configurações** (`/admin/configuracoes`, só super admin): conexão do assistente com a Anthropic (Claude) ou
+  a OpenAI. A chave de API fica cifrada no banco.
 
-Perfis: **super admin** (tudo, inclusive usuários) e **admin** (visitas, mapa e exportação).
+Perfis: **super admin** (tudo, inclusive usuários, configurações e os dados de quem cadastrou: IP e aparelho) e
+**admin** (visitas, mapa, site, assistente e exportação).
 
 ## Observações
 
@@ -43,5 +51,9 @@ Perfis: **super admin** (tudo, inclusive usuários) e **admin** (visitas, mapa e
   próprias com `PHOTON_URL` e `NOMINATIM_URL`.
 - O botão "usar minha localização" só funciona em **HTTPS** (ou em `localhost`). Em produção, coloque o sistema
   atrás de um proxy com certificado (Caddy, Nginx, Traefik etc.).
+- Atrás de um proxy (Nginx, Caddy), publique a aplicação só em `127.0.0.1` com `APP_PORT=127.0.0.1:3290` e
+  repasse os cabeçalhos `X-Forwarded-For` e `X-Forwarded-Proto`: é deles que saem o IP de quem cadastrou e o
+  cookie seguro do painel.
+- A chave que cifra as chaves de API vem do `SESSION_SECRET`: se ele mudar, informe as chaves de novo.
 - Os dados ficam no volume Docker `pgdata`. Backup:
   `docker compose exec db sh -c 'pg_dump -U $POSTGRES_USER $POSTGRES_DB' > backup.sql`

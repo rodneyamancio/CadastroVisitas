@@ -20,6 +20,17 @@ export type Visita = {
   lng: number | null;
   precisao: string | null;
   criado_em: Date;
+  ip: string | null;
+  agente: string | null;
+  extra: {
+    aparelho?: string;
+    idioma?: string;
+    tela?: string;
+    fuso?: string;
+    visitante?: string;
+    tempoS?: number | null;
+    usouGps?: boolean;
+  } | null;
 };
 
 export type Filtros = { q?: string; dia?: string; periodo?: string };

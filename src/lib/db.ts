@@ -44,6 +44,42 @@ CREATE TABLE IF NOT EXISTS visitas (
 );
 
 CREATE INDEX IF NOT EXISTS visitas_data_periodo ON visitas (data_visita, periodo);
+
+-- Dados de quem preencheu o cadastro (visíveis só para o super admin)
+ALTER TABLE visitas ADD COLUMN IF NOT EXISTS ip TEXT;
+ALTER TABLE visitas ADD COLUMN IF NOT EXISTS agente TEXT;
+ALTER TABLE visitas ADD COLUMN IF NOT EXISTS extra JSONB;
+
+-- Navegação do site público (acessos, toques, campos preenchidos, envios)
+CREATE TABLE IF NOT EXISTS eventos (
+  id BIGSERIAL PRIMARY KEY,
+  criado_em TIMESTAMPTZ NOT NULL DEFAULT now(),
+  visitante TEXT NOT NULL,
+  sessao TEXT NOT NULL,
+  tipo TEXT NOT NULL,
+  chave TEXT,
+  fx REAL,
+  fy REAL,
+  dispositivo TEXT,
+  dados JSONB
+);
+CREATE INDEX IF NOT EXISTS eventos_tipo_data ON eventos (tipo, criado_em);
+
+CREATE TABLE IF NOT EXISTS configuracoes (
+  chave TEXT PRIMARY KEY,
+  valor TEXT NOT NULL
+);
+
+-- Roteiros montados pelo assistente de IA
+CREATE TABLE IF NOT EXISTS roteiros (
+  id SERIAL PRIMARY KEY,
+  criado_em TIMESTAMPTZ NOT NULL DEFAULT now(),
+  criado_por TEXT,
+  provedor TEXT NOT NULL,
+  modelo TEXT NOT NULL,
+  parametros JSONB NOT NULL,
+  plano JSONB NOT NULL
+);
 `;
 
 const espera = (ms: number) => new Promise((r) => setTimeout(r, ms));
