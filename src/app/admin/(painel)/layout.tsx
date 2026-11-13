@@ -26,7 +26,7 @@ export default async function PainelLayout({ children }: { children: React.React
   return (
     <div className="min-h-dvh">
       <header className="border-b border-stone-200 bg-white print:hidden">
-        <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3">
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3 sm:px-6 lg:px-8">
           <span className="text-lg font-extrabold text-emerald-800">Painel de visitas</span>
           <nav className="flex flex-wrap gap-1" aria-label="Seções do painel">
             {links.map((l) => (
@@ -52,7 +52,7 @@ export default async function PainelLayout({ children }: { children: React.React
           </div>
         </div>
       </header>
-      <main className="mx-auto max-w-6xl px-4 py-6">{children}</main>
+      <main className="px-4 py-6 sm:px-6 lg:px-8">{children}</main>
     </div>
   );
 }

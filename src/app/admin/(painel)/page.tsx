@@ -201,7 +201,7 @@ export default async function Painel({ searchParams }: { searchParams: Promise<R
             {filtrando ? 'Nenhuma visita encontrada com estes filtros.' : 'Ainda não há visitas cadastradas.'}
           </p>
         ) : visao === 'cards' ? (
-          <ul className="grid gap-3 lg:grid-cols-2">
+          <ul className="grid gap-3 lg:grid-cols-2 2xl:grid-cols-3">
             {visitas.map((v) => (
               <li key={v.id} className="rounded-xl border border-stone-200 bg-white p-4">
                 <div className="flex items-start justify-between gap-3">
@@ -247,7 +247,7 @@ export default async function Painel({ searchParams }: { searchParams: Promise<R
             ))}
           </ul>
         ) : (
-          <div className="overflow-x-auto rounded-xl border border-stone-200 bg-white">
+          <div className="relative overflow-x-auto rounded-xl border border-stone-200 bg-white">
             <table className="w-full min-w-[70rem] border-collapse text-left text-sm">
               <thead className="bg-stone-50 text-xs text-stone-600 uppercase">
                 <tr>
@@ -272,13 +272,13 @@ export default async function Painel({ searchParams }: { searchParams: Promise<R
                     <td className="px-3 py-2">
                       <CaixaPortal id={v.id} nome={v.responsavel} migrado={v.migrado_em != null} detalhe={detalheDoPortal(v)} />
                     </td>
-                    <td className="px-3 py-2.5 font-semibold text-stone-900">{v.responsavel}</td>
+                    <td className="min-w-32 px-3 py-2.5 font-semibold text-stone-900">{v.responsavel}</td>
                     <td className="px-3 py-2.5 whitespace-nowrap">
                       <a href={`https://wa.me/55${v.telefone}`} target="_blank" rel="noopener noreferrer" className="text-emerald-800 underline">
                         {telefoneFormatado(v.telefone)}
                       </a>
                     </td>
-                    <td className="px-3 py-2.5">
+                    <td className="min-w-48 px-3 py-2.5">
                       <a href={linkMapa(v)} target="_blank" rel="noopener noreferrer" className="text-emerald-800 underline">
                         {[`${v.endereco}, ${v.numero}`, v.complemento].filter(Boolean).join(' - ')}
                       </a>
