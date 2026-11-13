@@ -24,6 +24,7 @@ export async function GET(req: Request) {
     { header: 'Telefone', key: 'telefone', width: 17 },
     { header: 'Dia da visita', key: 'dia', width: 18 },
     { header: 'Horário', key: 'periodo', width: 10 },
+    { header: 'Confirmar antes', key: 'confirmar', width: 16 },
     { header: 'Rua / Avenida', key: 'endereco', width: 36 },
     { header: 'Número', key: 'numero', width: 9 },
     { header: 'Complemento', key: 'complemento', width: 22 },
@@ -36,6 +37,9 @@ export async function GET(req: Request) {
     { header: 'Longitude', key: 'lng', width: 12 },
     { header: 'Precisão no mapa', key: 'precisao', width: 22 },
     { header: 'Cadastrado em', key: 'criado_em', width: 18 },
+    { header: 'No portal oficial', key: 'portal', width: 16 },
+    { header: 'Migrado em', key: 'portal_em', width: 18 },
+    { header: 'Migrado por', key: 'portal_por', width: 24 },
     // Dados de quem preencheu: só na planilha do super admin
     ...(superAdmin
       ? [
@@ -54,8 +58,12 @@ export async function GET(req: Request) {
       telefone: telefone(v.telefone),
       dia: nomeDia(v.data_visita),
       periodo: nomePeriodo(v.periodo),
+      confirmar: v.confirmar_contato == null ? '' : v.confirmar_contato ? 'Sim' : 'Não',
       precisao: v.precisao ? PRECISOES[v.precisao] : 'Não localizado',
       criado_em: quando.format(v.criado_em),
+      portal: v.migrado_em ? 'Migrado' : 'Falta migrar',
+      portal_em: v.migrado_em ? quando.format(v.migrado_em) : '',
+      portal_por: v.migrado_por ?? '',
       aparelho: v.extra?.aparelho ?? '',
       tempo: v.extra?.tempoS ?? '',
     });

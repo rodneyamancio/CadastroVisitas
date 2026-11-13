@@ -51,7 +51,9 @@ function visitaParaMcp(v: Visita, superAdmin: boolean) {
     dia_da_visita: v.data_visita,
     dia_da_visita_nome: nomeDia(v.data_visita),
     periodo: nomePeriodo(v.periodo),
+    entrar_em_contato_antes_para_confirmar: v.confirmar_contato == null ? 'não informado' : v.confirmar_contato ? 'sim' : 'não',
     cadastrado_em: quando(v.criado_em),
+    portal_oficial: v.migrado_em ? { migrado: true, em: quando(v.migrado_em), por: v.migrado_por } : { migrado: false },
     posicao_no_mapa: temPonto ? { lat: v.lat, lng: v.lng, precisao: PRECISOES[v.precisao ?? ''] ?? v.precisao } : null,
     link_do_mapa: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(alvo)}`,
     ...(superAdmin ? { quem_cadastrou: { ip: v.ip, navegador: v.agente, ...(v.extra ?? {}) } } : {}),
@@ -112,8 +114,8 @@ async function resumo() {
       `SELECT to_char((criado_em AT TIME ZONE 'America/Sao_Paulo')::date, 'YYYY-MM-DD') AS dia, count(*)::int AS n
        FROM visitas WHERE criado_em >= now() - interval '14 days' GROUP BY 1 ORDER BY 1`,
     ),
-    sql<{ total: number; sem_posicao: number; ultima: Date | null }>(
-      'SELECT count(*)::int AS total, count(*) FILTER (WHERE lat IS NULL)::int AS sem_posicao, max(criado_em) AS ultima FROM visitas',
+    sql<{ total: number; sem_posicao: number; migradas: number; ultima: Date | null }>(
+      'SELECT count(*)::int AS total, count(*) FILTER (WHERE lat IS NULL)::int AS sem_posicao, count(migrado_em)::int AS migradas, max(criado_em) AS ultima FROM visitas',
     ),
   ]);
   return {
@@ -129,6 +131,7 @@ async function resumo() {
     por_bairro: porBairro,
     cadastros_recebidos_por_data_ultimos_14_dias: porData,
     sem_posicao_no_mapa: geral.sem_posicao,
+    portal_oficial: { migradas: geral.migradas, faltam: geral.total - geral.migradas },
     ultimo_cadastro_em: quando(geral.ultima),
   };
 }
@@ -192,12 +195,13 @@ export function criarServidor(dono: DonoDoToken, assinaturas: Set<string>): McpS
     'listar_visitas',
     {
       title: 'Listar visitas',
-      description: 'Lista as famílias cadastradas, com filtros por dia, período, bairro, texto e data do cadastro. Devolve no máximo "limite" itens por página.',
+      description: 'Lista as famílias cadastradas, com filtros por dia, período, bairro, texto, data do cadastro e situação no portal oficial (já migrada ou não). Devolve no máximo "limite" itens por página.',
       inputSchema: {
         busca: z.string().max(100).optional().describe('Trecho do nome, da rua, do bairro, do telefone ou das observações'),
         dia: z.enum(['sabado', 'domingo']).optional().describe('sabado = 28/11/2026, domingo = 29/11/2026'),
         periodo: z.enum(['manha', 'tarde']).optional(),
         bairro: z.string().max(80).optional(),
+        portal_oficial: z.enum(['falta', 'migrado']).optional().describe('falta: ainda não passadas para o portal oficial; migrado: já passadas'),
         cadastradas_desde: z.string().optional().describe('Só as cadastradas a partir desta data (AAAA-MM-DD), horário de Brasília'),
         ordem: z.enum(['recentes', 'roteiro']).optional().describe('recentes (padrão): as mais novas primeiro; roteiro: por dia, período, bairro e rua'),
         limite: z.number().int().min(1).max(200).optional().describe('Padrão: 50'),
@@ -221,6 +225,7 @@ export function criarServidor(dono: DonoDoToken, assinaturas: Set<string>): McpS
         params.push(curinga(a.bairro));
         onde.push(`bairro ILIKE $${params.length}`);
       }
+      if (a.portal_oficial) onde.push(a.portal_oficial === 'migrado' ? 'migrado_em IS NOT NULL' : 'migrado_em IS NULL');
       if (a.busca) {
         params.push(curinga(a.busca));
         const n = params.length;
@@ -269,7 +274,7 @@ export function criarServidor(dono: DonoDoToken, assinaturas: Set<string>): McpS
     'resumo_visitas',
     {
       title: 'Resumo das visitas',
-      description: 'Totais de famílias por dia e período, por bairro, cadastros recebidos por data nos últimos 14 dias e quantos endereços ainda estão sem posição no mapa.',
+      description: 'Totais de famílias por dia e período, por bairro, cadastros recebidos por data nos últimos 14 dias quantos endereços ainda estão sem posição no mapa e quantas famílias já foram passadas para o portal oficial.',
       annotations: { title: 'Resumo das visitas', ...leitura },
     },
     async () => {

@@ -15,7 +15,7 @@ import { aprovarPedidoDeAcesso, recusarPedidoDeAcesso } from '@/lib/pedidos';
 import { montarRoteiro, ultimoRoteiro } from '@/lib/roteiro';
 import { conferirSenha, hashSenha } from '@/lib/senha';
 import { criarToken, validadeEmTexto } from '@/lib/tokens';
-import { enderecoCompleto, listarVisitas, localizarVisita, reconferirBairros, type BairroCorrigido, type Visita } from '@/lib/visitas';
+import { enderecoCompleto, listarVisitas, localizarVisita, marcarNoPortal, reconferirBairros, type BairroCorrigido, type Visita } from '@/lib/visitas';
 
 export type Retorno = { erro?: string; ok?: string; valores?: { nome?: string; email: string; perfil?: string; modo?: string } } | undefined;
 
@@ -70,6 +70,14 @@ export async function excluirVisita(id: number): Promise<void> {
       visita: `${nomeDia(v.data_visita)} · ${nomePeriodo(v.periodo)}`,
     });
   }
+  revalidatePath('/admin', 'layout');
+}
+
+// Controle do que já foi passado para o portal oficial.
+export async function marcarPortalOficial(id: number, migrado: boolean): Promise<void> {
+  const eu = await exigirUsuario();
+  const v = await marcarNoPortal(id, migrado, eu.nome);
+  if (v) await registrar(migrado ? 'visita.portal' : 'visita.portal.desfeito', eu, `Nº ${v.id} · ${v.responsavel}`, { endereço: enderecoCompleto(v) });
   revalidatePath('/admin', 'layout');
 }
 

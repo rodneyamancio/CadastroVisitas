@@ -18,6 +18,8 @@ type Campos = {
   obs: string;
   dia: string;
   periodo: string;
+  // Entrar em contato com a família antes, para confirmar a visita? '' = ainda não respondeu
+  contato: '' | 'sim' | 'nao';
 };
 
 const VAZIO: Campos = {
@@ -31,11 +33,12 @@ const VAZIO: Campos = {
   obs: '',
   dia: '',
   periodo: '',
+  contato: '',
 };
 
-type Chave = 'nome' | 'telefone' | 'rua' | 'numero' | 'dia' | 'periodo';
+type Chave = 'nome' | 'telefone' | 'rua' | 'numero' | 'dia' | 'periodo' | 'contato';
 type Erros = Partial<Record<Chave, string>>;
-const ORDEM: Chave[] = ['nome', 'telefone', 'rua', 'numero', 'dia', 'periodo'];
+const ORDEM: Chave[] = ['nome', 'telefone', 'rua', 'numero', 'dia', 'periodo', 'contato'];
 const RASCUNHO = 'cadastro-familia-rascunho';
 
 function mascaraTelefone(valor: string): string {
@@ -55,6 +58,7 @@ function validar(f: Campos): Erros {
   if (!f.semNumero && !f.numero.trim()) e.numero = 'Escreva o número da casa ou marque "A casa não tem número".';
   if (!f.dia) e.dia = 'Toque em um dos dias: sábado ou domingo.';
   if (!f.periodo) e.periodo = 'Toque em um dos horários: manhã ou tarde.';
+  if (!f.contato) e.contato = 'Toque em Sim ou Não.';
   return e;
 }
 
@@ -108,6 +112,16 @@ const iconeManha = (
     <path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
   </svg>
 );
+const iconeTelefone = (
+  <svg viewBox="0 0 24 24" className="h-8 w-8" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2z" />
+  </svg>
+);
+const iconeCasa = (
+  <svg viewBox="0 0 24 24" className="h-8 w-8" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M4 11l8-7 8 7M6 10v10h12V10M10 20v-6h4v6" />
+  </svg>
+);
 const iconeTarde = (
   <svg viewBox="0 0 24 24" className="h-8 w-8" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
     <path d="M7 17a5 5 0 0 1 10 0M12 6v3M4.9 9.9l2 2M19.1 9.9l-2 2M2 17h20M6 21h12" />
@@ -139,7 +153,7 @@ export default function FormularioVisita() {
   }, []);
 
   function marcarCampo(chave: string) {
-    const campo = chave.startsWith('dia-') ? 'dia' : chave.startsWith('periodo-') ? 'periodo' : chave === 'sem-numero' ? 'numero' : chave;
+    const campo = chave.startsWith('dia-') ? 'dia' : chave.startsWith('periodo-') ? 'periodo' : chave.startsWith('contato-') ? 'contato' : chave === 'sem-numero' ? 'numero' : chave;
     if (campo.startsWith('passo-') || camposVistos.current.has(campo)) return;
     camposVistos.current.add(campo);
     inicio.current ??= Date.now();
@@ -196,7 +210,7 @@ export default function FormularioVisita() {
 
   function mudar<K extends keyof Campos>(campo: K, valor: Campos[K]) {
     setF((a) => ({ ...a, [campo]: valor }));
-    if (campo === 'dia' || campo === 'periodo') marcarCampo(campo);
+    if (campo === 'dia' || campo === 'periodo' || campo === 'contato') marcarCampo(campo);
     if (campo in erros) setErros((e) => ({ ...e, [campo]: undefined }));
     setFalha('');
   }
@@ -428,6 +442,10 @@ export default function FormularioVisita() {
             <dd className="font-bold">
               {dia?.semana}, {dia?.data} · {periodo?.nome}
             </dd>
+          </div>
+          <div>
+            <dt className="text-base text-stone-600">Confirmar a visita antes</dt>
+            <dd className="font-bold">{enviado.contato === 'sim' ? 'Sim, entrar em contato antes' : 'Não precisa'}</dd>
           </div>
         </dl>
         <button
@@ -727,6 +745,19 @@ export default function FormularioVisita() {
           {erros.periodo && (
             <p className="erro" role="alert">
               {erros.periodo}
+            </p>
+          )}
+        </fieldset>
+
+        <fieldset id="campo-contato" className="scroll-mt-6">
+          <legend className="rotulo">Precisamos entrar em contato antes para confirmar a visita?</legend>
+          <div className="mt-3 grid grid-cols-2 gap-3">
+            <Opcao grupo="contato" valor="sim" marcado={f.contato === 'sim'} aoEscolher={() => mudar('contato', 'sim')} titulo="Sim" detalhe="avisar antes" icone={iconeTelefone} />
+            <Opcao grupo="contato" valor="nao" marcado={f.contato === 'nao'} aoEscolher={() => mudar('contato', 'nao')} titulo="Não" detalhe="pode ir direto" icone={iconeCasa} />
+          </div>
+          {erros.contato && (
+            <p className="erro" role="alert">
+              {erros.contato}
             </p>
           )}
         </fieldset>

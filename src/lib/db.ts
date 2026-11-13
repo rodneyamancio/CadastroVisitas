@@ -105,6 +105,13 @@ CREATE INDEX IF NOT EXISTS auditoria_acao ON auditoria (acao);
 -- Bairro: valor original quando o sistema troca pelo bairro dos Correios
 ALTER TABLE visitas ADD COLUMN IF NOT EXISTS bairro_informado TEXT;
 
+-- Controle do que já foi passado para o portal oficial (este sistema é paralelo a ele)
+ALTER TABLE visitas ADD COLUMN IF NOT EXISTS migrado_em TIMESTAMPTZ;
+ALTER TABLE visitas ADD COLUMN IF NOT EXISTS migrado_por TEXT;
+
+-- Entrar em contato com a família antes, para confirmar a visita? (nulo = cadastro antigo, sem resposta)
+ALTER TABLE visitas ADD COLUMN IF NOT EXISTS confirmar_contato BOOLEAN;
+
 -- Tokens de acesso ao servidor MCP (guardamos só o resumo). "visto_*" marca até onde
 -- o dono do token já viu as novidades.
 CREATE TABLE IF NOT EXISTS tokens_mcp (

@@ -5,6 +5,7 @@ import { DIAS, PERIODOS, PRECISOES, nomeDia, nomePeriodo } from '@/lib/config';
 import { enderecoCompleto, filtrosParaUrl, lerFiltros, listarVisitas, resumoVisitas, type Visita } from '@/lib/visitas';
 import BotaoBairros from './BotaoBairros';
 import BotaoExcluir from './BotaoExcluir';
+import CaixaPortal from './CaixaPortal';
 import SeletorVisao, { type Visao } from './SeletorVisao';
 
 function telefoneFormatado(t: string) {
@@ -19,6 +20,14 @@ function linkMapa(v: Visita) {
 }
 
 const quando = new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short', timeZone: 'America/Sao_Paulo' });
+
+const diaHora = new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' });
+
+// "13/11, 14:02 · Rodney": quando e quem marcou o cadastro como migrado para o portal oficial
+function detalheDoPortal(v: Visita) {
+  if (!v.migrado_em) return undefined;
+  return [diaHora.format(v.migrado_em), v.migrado_por?.split(' ')[0]].filter(Boolean).join(' · ');
+}
 
 function tempoDePreenchimento(s: number | null | undefined) {
   if (s == null) return 'não medido';
@@ -59,6 +68,7 @@ export default async function Painel({ searchParams }: { searchParams: Promise<R
   const [visitas, resumo] = await Promise.all([listarVisitas(filtros), resumoVisitas()]);
   const consulta = filtrosParaUrl(filtros);
   const filtrando = Boolean(consulta);
+  const faltam = resumo.total - resumo.migradas;
 
   return (
     <div className="space-y-6">
@@ -79,8 +89,34 @@ export default async function Painel({ searchParams }: { searchParams: Promise<R
         )}
       </section>
 
+      {resumo.total > 0 && (
+        <section aria-label="Portal oficial" className="rounded-xl border border-stone-200 bg-white p-4">
+          <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+            <p className="text-stone-800">
+              <span className="font-bold text-stone-900">Portal oficial:</span> {resumo.migradas} de {resumo.total} já {resumo.migradas === 1 ? 'migrada' : 'migradas'}
+              {faltam > 0 ? (
+                <>
+                  {' · '}
+                  <span className="font-semibold text-amber-800">{faltam === 1 ? 'falta 1' : `faltam ${faltam}`}</span>
+                </>
+              ) : (
+                <span className="font-semibold text-emerald-800"> · tudo migrado</span>
+              )}
+            </p>
+            {faltam > 0 && filtros.portal !== 'falta' && (
+              <Link href="/admin?portal=falta" className="text-sm font-semibold text-emerald-800 underline">
+                Ver as que faltam
+              </Link>
+            )}
+          </div>
+          <div className="mt-2 h-2 overflow-hidden rounded-full bg-stone-200" aria-hidden="true">
+            <div className="h-full rounded-full bg-emerald-600" style={{ width: `${(resumo.migradas / resumo.total) * 100}%` }} />
+          </div>
+        </section>
+      )}
+
       <section className="rounded-xl border border-stone-200 bg-white p-4">
-        <form method="get" className="grid gap-3 sm:grid-cols-[1fr_auto_auto_auto] sm:items-end">
+        <form method="get" className="grid gap-3 sm:grid-cols-2 sm:items-end lg:grid-cols-[1fr_auto_auto_auto_auto]">
           <div>
             <label htmlFor="q" className="mb-1 block text-sm font-semibold text-stone-700">
               Buscar
@@ -111,6 +147,16 @@ export default async function Painel({ searchParams }: { searchParams: Promise<R
                   {p.nome}
                 </option>
               ))}
+            </select>
+          </div>
+          <div>
+            <label htmlFor="portal" className="mb-1 block text-sm font-semibold text-stone-700">
+              Portal oficial
+            </label>
+            <select id="portal" name="portal" defaultValue={filtros.portal ?? ''} className="adm-campo">
+              <option value="">Todos</option>
+              <option value="falta">Falta migrar</option>
+              <option value="migrado">Já migrados</option>
             </select>
           </div>
           <div className="flex gap-2">
@@ -166,6 +212,15 @@ export default async function Painel({ searchParams }: { searchParams: Promise<R
                 </div>
                 <p className="mt-1 text-stone-800">{enderecoCompleto(v)}</p>
                 {v.observacoes && <p className="mt-1 text-sm text-stone-600">Como achar: {v.observacoes}</p>}
+                {v.confirmar_contato != null && (
+                  <p className="mt-2 text-sm">
+                    {v.confirmar_contato ? (
+                      <span className="rounded-full bg-amber-100 px-3 py-1 font-semibold text-amber-900">Entrar em contato antes para confirmar</span>
+                    ) : (
+                      <span className="text-stone-600">Não precisa confirmar antes da visita</span>
+                    )}
+                  </p>
+                )}
                 <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
                   <a href={`tel:+55${v.telefone}`} className="font-semibold text-emerald-800 underline">
                     {telefoneFormatado(v.telefone)}
@@ -180,6 +235,10 @@ export default async function Painel({ searchParams }: { searchParams: Promise<R
                     <BotaoExcluir id={v.id} nome={v.responsavel} />
                   </span>
                 </div>
+                <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-stone-100 pt-3 text-sm">
+                  <span className="text-stone-600">Portal oficial:</span>
+                  <CaixaPortal id={v.id} nome={v.responsavel} migrado={v.migrado_em != null} detalhe={detalheDoPortal(v)} />
+                </div>
                 <p className="mt-2 text-xs text-stone-500">
                   Cadastrado em {quando.format(v.criado_em)} · No mapa: {v.precisao ? PRECISOES[v.precisao] : 'ainda não localizado'}
                 </p>
@@ -189,15 +248,17 @@ export default async function Painel({ searchParams }: { searchParams: Promise<R
           </ul>
         ) : (
           <div className="overflow-x-auto rounded-xl border border-stone-200 bg-white">
-            <table className="w-full min-w-[56rem] border-collapse text-left text-sm">
+            <table className="w-full min-w-[70rem] border-collapse text-left text-sm">
               <thead className="bg-stone-50 text-xs text-stone-600 uppercase">
                 <tr>
+                  <th className="px-3 py-2.5 font-semibold">Portal oficial</th>
                   <th className="px-3 py-2.5 font-semibold">Responsável</th>
                   <th className="px-3 py-2.5 font-semibold">Telefone</th>
                   <th className="px-3 py-2.5 font-semibold">Endereço</th>
                   <th className="px-3 py-2.5 font-semibold">Bairro</th>
                   <th className="px-3 py-2.5 font-semibold">Dia</th>
                   <th className="px-3 py-2.5 font-semibold">Horário</th>
+                  <th className="px-3 py-2.5 font-semibold">Confirmar antes</th>
                   <th className="px-3 py-2.5 font-semibold">Cadastrado em</th>
                   {superAdmin && <th className="px-3 py-2.5 font-semibold">IP / aparelho</th>}
                   <th className="px-3 py-2.5 font-semibold">
@@ -208,6 +269,9 @@ export default async function Painel({ searchParams }: { searchParams: Promise<R
               <tbody className="divide-y divide-stone-100">
                 {visitas.map((v) => (
                   <tr key={v.id} className="align-top hover:bg-stone-50">
+                    <td className="px-3 py-2">
+                      <CaixaPortal id={v.id} nome={v.responsavel} migrado={v.migrado_em != null} detalhe={detalheDoPortal(v)} />
+                    </td>
                     <td className="px-3 py-2.5 font-semibold text-stone-900">{v.responsavel}</td>
                     <td className="px-3 py-2.5 whitespace-nowrap">
                       <a href={`https://wa.me/55${v.telefone}`} target="_blank" rel="noopener noreferrer" className="text-emerald-800 underline">
@@ -223,6 +287,15 @@ export default async function Painel({ searchParams }: { searchParams: Promise<R
                     <td className="px-3 py-2.5">{v.bairro ?? ''}</td>
                     <td className="px-3 py-2.5 whitespace-nowrap">{nomeDia(v.data_visita)}</td>
                     <td className="px-3 py-2.5">{nomePeriodo(v.periodo)}</td>
+                    <td className="px-3 py-2.5">
+                      {v.confirmar_contato == null ? (
+                        <span className="text-stone-400">não informado</span>
+                      ) : v.confirmar_contato ? (
+                        <span className="font-semibold text-amber-800">Sim</span>
+                      ) : (
+                        'Não'
+                      )}
+                    </td>
                     <td className="px-3 py-2.5 whitespace-nowrap text-stone-600">{quando.format(v.criado_em)}</td>
                     {superAdmin && (
                       <td className="px-3 py-2.5 text-xs text-stone-600">

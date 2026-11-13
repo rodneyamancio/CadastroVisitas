@@ -29,6 +29,8 @@ export async function POST(req: Request) {
   const numero = texto(c.numero, 12);
   const dia = texto(c.dia, 10);
   const periodo = texto(c.periodo, 10);
+  // Quem está com o formulário antigo aberto não manda a resposta: fica sem informação, sem travar o envio.
+  const confirmarContato = c.contato === 'sim' ? true : c.contato === 'nao' ? false : null;
 
   const erros: Record<string, string> = {};
   if (nome.length < 3) erros.nome = 'Escreva o nome completo do responsável pela casa.';
@@ -66,8 +68,8 @@ export async function POST(req: Request) {
 
   const [nova] = await sql<{ id: number }>(
     `INSERT INTO visitas (responsavel, telefone, endereco, numero, complemento, bairro, cidade, uf, cep, observacoes,
-                          data_visita, periodo, lat, lng, precisao, ip, agente, extra)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18) RETURNING id`,
+                          data_visita, periodo, lat, lng, precisao, ip, agente, extra, confirmar_contato)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19) RETURNING id`,
     [
       nome,
       telefone,
@@ -87,12 +89,14 @@ export async function POST(req: Request) {
       ip,
       agente || null,
       JSON.stringify(extra),
+      confirmarContato,
     ],
   );
 
   await registrar('visita.criada', { nome: 'Formulário público' }, `Nº ${nova.id} · ${nome}`, {
     endereço: `${rua}, ${numero}`,
     visita: `${nomeDia(dia)} · ${nomePeriodo(periodo)}`,
+    'confirmar antes': confirmarContato == null ? 'não informado' : confirmarContato ? 'sim' : 'não',
     aparelho: extra.aparelho,
   });
 

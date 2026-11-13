@@ -27,10 +27,13 @@ docker compose -f docker-compose.yml -f docker-compose.dev.yml up
 ## O que tem
 
 - **Formulário** (`/`): responsável, telefone, endereço (sugestão de ruas ou localização do celular), número,
-  complemento, bairro, ponto de referência, dia (sábado 28/11 ou domingo 29/11) e horário (manhã ou tarde).
+  complemento, bairro, ponto de referência, dia (sábado 28/11 ou domingo 29/11), horário (manhã ou tarde) e se é
+  preciso entrar em contato antes para confirmar a visita (sim ou não).
 - **Visitas** (`/admin`): lista em cards ou tabela, busca e filtros, totais por dia/horário, exclusão e
   **exportação para Excel** (respeita os filtros).
   O botão **Conferir bairros** olha de novo o bairro de todas as visitas pelo nome da rua e corrige os errados.
+  A coluna **Portal oficial** marca o que já foi passado para o portal oficial (este sistema é paralelo a ele):
+  mostra quem marcou e quando, tem filtro "Falta migrar" e contador do que falta, e sai na planilha.
 - **Mapa de calor** (`/admin/mapa`): filtros por dia e horário, casas individuais e ranking por bairro.
 - **Site** (`/admin/site`): quantas pessoas entram, até que etapa do formulário chegam, quantas cadastram,
   onde o envio trava, aparelho usado e mapa de calor dos toques no formulário. Os dados são anônimos.

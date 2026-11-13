@@ -21,6 +21,11 @@ export type Visita = {
   lng: number | null;
   precisao: string | null;
   criado_em: Date;
+  // Portal oficial: quando e por quem o cadastro foi passado para lá (nulo = ainda falta)
+  migrado_em: Date | null;
+  migrado_por: string | null;
+  // Entrar em contato antes para confirmar a visita? (nulo = cadastro antigo, sem resposta)
+  confirmar_contato: boolean | null;
   ip: string | null;
   agente: string | null;
   extra: {
@@ -34,16 +39,18 @@ export type Visita = {
   } | null;
 };
 
-export type Filtros = { q?: string; dia?: string; periodo?: string };
+export type Filtros = { q?: string; dia?: string; periodo?: string; portal?: 'falta' | 'migrado' };
 
 export function lerFiltros(sp: Record<string, string | string[] | undefined>): Filtros {
   const um = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) ?? '';
   const dia = um(sp.dia);
   const periodo = um(sp.periodo);
+  const portal = um(sp.portal);
   return {
     q: um(sp.q).trim().slice(0, 100) || undefined,
     dia: DIAS.some((d) => d.valor === dia) ? dia : undefined,
     periodo: PERIODOS.some((p) => p.valor === periodo) ? periodo : undefined,
+    portal: portal === 'falta' || portal === 'migrado' ? portal : undefined,
   };
 }
 
@@ -52,6 +59,7 @@ export function filtrosParaUrl(f: Filtros): string {
   if (f.q) p.set('q', f.q);
   if (f.dia) p.set('dia', f.dia);
   if (f.periodo) p.set('periodo', f.periodo);
+  if (f.portal) p.set('portal', f.portal);
   return p.toString();
 }
 
@@ -66,6 +74,7 @@ export async function listarVisitas(f: Filtros = {}): Promise<Visita[]> {
     params.push(f.periodo);
     onde.push(`periodo = $${params.length}`);
   }
+  if (f.portal) onde.push(f.portal === 'migrado' ? 'migrado_em IS NOT NULL' : 'migrado_em IS NULL');
   if (f.q) {
     params.push(`%${f.q.replace(/[%_\\]/g, '\\$&')}%`);
     const n = params.length;
@@ -80,25 +89,39 @@ export async function listarVisitas(f: Filtros = {}): Promise<Visita[]> {
   );
 }
 
-export type Resumo = { total: number; grupos: Record<string, number> };
+export type Resumo = { total: number; migradas: number; grupos: Record<string, number> };
 
 export async function resumoVisitas(): Promise<Resumo> {
-  const linhas = await sql<{ data_visita: string; periodo: string; n: number }>(
-    'SELECT data_visita, periodo, count(*)::int AS n FROM visitas GROUP BY 1, 2',
+  const linhas = await sql<{ data_visita: string; periodo: string; n: number; migradas: number }>(
+    'SELECT data_visita, periodo, count(*)::int AS n, count(migrado_em)::int AS migradas FROM visitas GROUP BY 1, 2',
   );
   const grupos: Record<string, number> = {};
   let total = 0;
+  let migradas = 0;
   for (const l of linhas) {
     grupos[`${l.data_visita}|${l.periodo}`] = l.n;
     total += l.n;
+    migradas += l.migradas;
   }
-  return { total, grupos };
+  return { total, migradas, grupos };
 }
 
 export function enderecoCompleto(v: Pick<Visita, 'endereco' | 'numero' | 'complemento' | 'bairro' | 'cidade' | 'uf'>): string {
   const linha1 = [`${v.endereco}, ${v.numero}`, v.complemento].filter(Boolean).join(' - ');
   const cidade = v.cidade && v.uf ? `${v.cidade} - ${v.uf}` : v.cidade;
   return [linha1, v.bairro, cidade].filter(Boolean).join(', ');
+}
+
+// Marca (ou desmarca) que o cadastro já foi passado para o portal oficial.
+// Marcar de novo o que já estava marcado não troca a data nem o autor.
+export async function marcarNoPortal(id: number, migrado: boolean, por: string): Promise<Visita | null> {
+  const [v] = migrado
+    ? await sql<Visita>(
+        'UPDATE visitas SET migrado_em = COALESCE(migrado_em, now()), migrado_por = COALESCE(migrado_por, $2) WHERE id = $1 RETURNING *',
+        [id, por],
+      )
+    : await sql<Visita>('UPDATE visitas SET migrado_em = NULL, migrado_por = NULL WHERE id = $1 RETURNING *', [id]);
+  return v ?? null;
 }
 
 // Descobre a posição da casa no mapa. Quem cadastrou pelo GPS do celular já tem posição exata.

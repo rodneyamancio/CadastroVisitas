@@ -25,6 +25,8 @@ export const ACOES: Record<string, string> = {
   'visita.exportada': 'Exportou visitas para Excel',
   'visita.localizar': 'Mandou localizar endereços no mapa',
   'visita.bairros': 'Conferiu os bairros pela rua',
+  'visita.portal': 'Marcou como cadastrada no portal oficial',
+  'visita.portal.desfeito': 'Desmarcou o cadastro no portal oficial',
   'roteiro.gerado': 'Montou roteiros com IA',
   'roteiro.falha': 'Falha ao montar roteiros',
   'roteiro.exportado': 'Exportou roteiros para Excel',
