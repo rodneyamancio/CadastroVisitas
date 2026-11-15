@@ -43,14 +43,18 @@ export async function POST(req: Request) {
   if (Object.keys(erros).length) return NextResponse.json({ erro: 'Confira os campos destacados.', erros }, { status: 422 });
 
   // Antes de gravar: se já existe cadastro parecido, pergunta a quem está cadastrando se é a mesma família.
-  // Só para o formulário novo (que sabe mostrar o aviso); com "confirmado", grava mesmo assim.
+  // Só para o formulário novo (que sabe mostrar o aviso). "ignorar" traz os cadastros que a pessoa já disse
+  // serem de outra família; com "confirmado" (formulário da versão anterior), grava sem conferir.
   const complemento = texto(c.complemento, 120) || null;
-  const confirmado = c.confirmado === true;
+  const ignorar = new Set(Array.isArray(c.ignorar) ? c.ignorar.filter((n): n is number => Number.isInteger(n)) : []);
+  let confirmado = c.confirmado === true;
   if (c.avisarDuplicidade === true && !confirmado) {
-    const parecidas = await parecidasCom({ responsavel: nome, telefone, endereco: rua, numero, complemento }).catch((e) => {
+    const todas = await parecidasCom({ responsavel: nome, telefone, endereco: rua, numero, complemento }).catch((e) => {
       console.error('Falha ao procurar cadastro parecido', e);
       return [];
     });
+    const parecidas = todas.filter((p) => !ignorar.has(p.id));
+    confirmado = todas.length > 0 && !parecidas.length;
     if (parecidas.length) {
       await registrar('visita.duplicidade.aviso', { nome: 'Formulário público' }, nome, {
         endereço: `${rua}, ${numero}`,
@@ -116,7 +120,7 @@ export async function POST(req: Request) {
     endereço: `${rua}, ${numero}`,
     visita: `${nomeDia(dia)} · ${nomePeriodo(periodo)}`,
     'confirmar antes': confirmarContato == null ? 'não informado' : confirmarContato ? 'sim' : 'não',
-    ...(confirmado ? { 'aviso de duplicidade': 'viu o aviso e enviou mesmo assim' } : {}),
+    ...(confirmado ? { 'aviso de duplicidade': 'viu o aviso e disse que é outra família' } : {}),
     aparelho: extra.aparelho,
   });
 

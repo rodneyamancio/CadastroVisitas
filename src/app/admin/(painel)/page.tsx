@@ -282,7 +282,10 @@ export default async function Painel({ searchParams }: { searchParams: Promise<R
                   <a href={linkMapa(v)} target="_blank" rel="noopener noreferrer" className="font-semibold text-emerald-800 underline">
                     Abrir no mapa
                   </a>
-                  <span className="ml-auto">
+                  <span className="ml-auto flex items-center gap-1">
+                    <Link href={`/admin/visitas/${v.id}`} className="rounded-lg px-2 py-1 text-sm font-semibold text-emerald-800 hover:bg-emerald-50">
+                      Editar
+                    </Link>
                     <BotaoExcluir id={v.id} nome={v.responsavel} />
                   </span>
                 </div>

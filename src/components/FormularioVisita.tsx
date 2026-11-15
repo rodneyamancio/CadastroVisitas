@@ -37,6 +37,7 @@ const VAZIO: Campos = {
   contato: '',
 };
 
+type CampoDoAviso = 'nome' | 'telefone' | 'endereco' | 'enviar';
 type Chave = 'nome' | 'telefone' | 'rua' | 'numero' | 'dia' | 'periodo' | 'contato';
 type Erros = Partial<Record<Chave, string>>;
 const ORDEM: Chave[] = ['nome', 'telefone', 'rua', 'numero', 'dia', 'periodo', 'contato'];
@@ -141,7 +142,11 @@ export default function FormularioVisita() {
   const [falha, setFalha] = useState('');
   const [enviado, setEnviado] = useState<Campos | null>(null);
   // Cadastro parecido já existente: o aviso vale só enquanto os dados conferidos não mudarem
-  const [aviso, setAviso] = useState<{ chave: string; parecidas: Parecida[] } | null>(null);
+  // "campo": onde o aviso aparece (logo abaixo do que acabou de ser preenchido, ou junto do botão de enviar)
+  const [aviso, setAviso] = useState<{ chave: string; parecidas: Parecida[]; campo: CampoDoAviso; dispensado: boolean } | null>(null);
+  const dispensadas = useRef(new Set<number>()); // cadastros que a pessoa disse serem de outra família
+  const conferido = useRef('');
+  const anteriores = useRef({ nome: '', telefone: '', endereco: '' });
   const [naoEnviado, setNaoEnviado] = useState(false);
   const [site, setSite] = useState('');
   const carregou = useRef(false);
@@ -348,11 +353,60 @@ export default function FormularioVisita() {
   }
 
   const chaveDoAviso = JSON.stringify([f.nome, f.telefone, f.rua, f.numero, f.semNumero, f.complemento]);
-  const parecidas = aviso && aviso.chave === chaveDoAviso ? aviso.parecidas : null;
+  const avisoAtual = aviso && aviso.chave === chaveDoAviso ? aviso : null;
+
+  // Enquanto a pessoa preenche: assim que nome, telefone ou endereço estiverem completos, confere se já
+  // existe cadastro parecido. O aviso aparece logo abaixo do campo que acabou de ser preenchido.
+  useEffect(() => {
+    const atual = { nome: f.nome.trim(), telefone: f.telefone.replace(/\D/g, ''), endereco: `${f.rua.trim()}|${f.semNumero ? 'S/N' : f.numero.trim()}|${f.complemento.trim()}` };
+    const campo: CampoDoAviso | null =
+      atual.endereco !== anteriores.current.endereco ? 'endereco' : atual.telefone !== anteriores.current.telefone ? 'telefone' : atual.nome !== anteriores.current.nome ? 'nome' : null;
+    anteriores.current = atual;
+    const nomeCompleto = atual.nome.split(' ').filter((p) => p.length > 1).length >= 2;
+    const enderecoCompleto = f.rua.trim().length >= 3 && (f.semNumero || Boolean(f.numero.trim()));
+    if (!nomeCompleto && atual.telefone.length < 10 && !enderecoCompleto) return;
+    if (conferido.current === chaveDoAviso) return;
+    const cancelar = new AbortController();
+    const t = setTimeout(async () => {
+      try {
+        const r = await fetch('/api/visitas/parecidas', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            nome: f.nome,
+            telefone: f.telefone,
+            rua: f.rua,
+            numero: f.semNumero ? 'S/N' : f.numero,
+            complemento: f.complemento,
+            ignorar: [...dispensadas.current],
+          }),
+          signal: cancelar.signal,
+        });
+        if (!r.ok) return;
+        const d = (await r.json()) as { parecidas?: Parecida[] };
+        conferido.current = chaveDoAviso;
+        const lista = d.parecidas ?? [];
+        setAviso((a) =>
+          lista.length ? { chave: chaveDoAviso, parecidas: lista, campo: a?.campo === 'enviar' ? 'enviar' : (campo ?? a?.campo ?? 'nome'), dispensado: false } : null,
+        );
+      } catch {}
+    }, 700);
+    return () => {
+      clearTimeout(t);
+      cancelar.abort();
+    };
+  }, [chaveDoAviso, f.nome, f.telefone, f.rua, f.numero, f.semNumero, f.complemento]);
 
   useEffect(() => {
-    if (aviso) document.getElementById('aviso-duplicidade')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    if (aviso?.campo === 'enviar' && !aviso.dispensado) document.getElementById('aviso-duplicidade')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }, [aviso]);
+
+  // "É outra família": esses cadastros não são mais apontados para esta pessoa.
+  function dispensarAviso() {
+    if (!avisoAtual) return;
+    for (const p of avisoAtual.parecidas) dispensadas.current.add(p.id);
+    setAviso({ ...avisoAtual, dispensado: true });
+  }
 
   function limparTudo() {
     try {
@@ -363,12 +417,14 @@ export default function FormularioVisita() {
     setF(VAZIO);
     setLocal(null);
     setAviso(null);
+    dispensadas.current.clear();
+    conferido.current = '';
     setNaoEnviado(false);
     window.scrollTo({ top: 0 });
   }
 
-  // "confirmado": a pessoa viu o aviso de cadastro parecido e disse que é outra família.
-  async function enviar(ev?: React.FormEvent, confirmado = false) {
+  // "jaRespondeu": a pessoa acabou de dizer, no aviso, que é outra família.
+  async function enviar(ev?: React.FormEvent, jaRespondeu = false) {
     ev?.preventDefault();
     if (enviando) return;
     const e = validar(f);
@@ -376,6 +432,11 @@ export default function FormularioVisita() {
     if (Object.keys(e).length) {
       rastrear({ tipo: 'tentativa', dados: { erros: Object.keys(e) } });
       irParaErro(e);
+      return;
+    }
+    // Aviso de cadastro parecido ainda sem resposta: leva a pergunta para junto do botão
+    if (!jaRespondeu && avisoAtual && !avisoAtual.dispensado) {
+      setAviso({ ...avisoAtual, campo: 'enviar' });
       return;
     }
     setEnviando(true);
@@ -396,7 +457,7 @@ export default function FormularioVisita() {
           cep: local?.cep ?? '',
           bairroAutomatico: Boolean(f.bairro) && f.bairro === bairroAuto.current,
           avisarDuplicidade: true,
-          confirmado,
+          ignorar: [...dispensadas.current],
           tela: `${window.innerWidth}x${window.innerHeight}`,
           fuso: Intl.DateTimeFormat().resolvedOptions().timeZone,
           visitante: idVisitante(),
@@ -416,11 +477,13 @@ export default function FormularioVisita() {
         setF(VAZIO);
         setLocal(null);
         setAviso(null);
+        dispensadas.current.clear();
+        conferido.current = '';
         window.scrollTo({ top: 0 });
         return;
       }
       if (r.status === 409 && d.duplicidade?.length) {
-        setAviso({ chave: chaveDoAviso, parecidas: d.duplicidade });
+        setAviso({ chave: chaveDoAviso, parecidas: d.duplicidade, campo: 'enviar', dispensado: false });
         rastrear({ tipo: 'tentativa', dados: { erros: ['duplicidade'] } });
         return;
       }
@@ -444,6 +507,58 @@ export default function FormularioVisita() {
     const proximo = campos[campos.indexOf(ev.target) + 1];
     if (proximo) proximo.focus();
     else ev.target.blur();
+  }
+
+  function caixaDoAviso(campo: CampoDoAviso) {
+    if (!avisoAtual || avisoAtual.dispensado || avisoAtual.campo !== campo) return null;
+    const lista = avisoAtual.parecidas;
+    const noFim = campo === 'enviar';
+    return (
+      <section id="aviso-duplicidade" role="alert" data-mapa="duplicidade" className="scroll-mt-6 rounded-2xl border-2 border-amber-400 bg-amber-50 p-4">
+        <h2 className="text-xl font-extrabold text-stone-900">{noFim ? 'Parece que esta família já foi cadastrada' : 'Atenção: esta família pode já estar cadastrada'}</h2>
+        <p className="mt-1 text-lg text-stone-800">
+          {lista.length === 1 ? 'Já existe um cadastro parecido com este.' : 'Já existem cadastros parecidos com este.'} Confira:
+        </p>
+        <ul className="mt-3 space-y-2">
+          {lista.map((p) => (
+            <li key={p.id} className="rounded-xl bg-white p-3 text-lg text-stone-900">
+              <p className="font-bold">
+                Cadastro nº {p.id}
+                {p.nome ? ` · ${p.nome}` : ''}
+              </p>
+              {p.endereco && <p>{p.endereco}</p>}
+              <p>Visita: {p.visita}</p>
+              <p className="text-base font-semibold text-amber-900">Igual ou parecido: {p.motivos.join(', ')}</p>
+            </li>
+          ))}
+        </ul>
+        <div className="mt-4 space-y-3">
+          <button
+            type="button"
+            data-mapa="duplicidade-nao-enviar"
+            onClick={() => {
+              setNaoEnviado(true);
+              window.scrollTo({ top: 0 });
+            }}
+            className="w-full rounded-2xl bg-emerald-700 px-6 py-4 text-xl font-extrabold text-white shadow-md active:bg-emerald-800"
+          >
+            É a mesma família: não enviar
+          </button>
+          <button
+            type="button"
+            data-mapa="duplicidade-enviar"
+            disabled={enviando}
+            onClick={() => {
+              dispensarAviso();
+              if (noFim) void enviar(undefined, true);
+            }}
+            className="w-full rounded-2xl border-2 border-stone-400 bg-white px-6 py-4 text-xl font-bold text-stone-900 active:bg-stone-100 disabled:opacity-70"
+          >
+            {noFim ? (enviando ? 'Enviando…' : 'É outra família: enviar mesmo assim') : 'É outra família: continuar'}
+          </button>
+        </div>
+      </section>
+    );
   }
 
   if (naoEnviado) {
@@ -554,6 +669,7 @@ export default function FormularioVisita() {
             </p>
           )}
         </div>
+        {caixaDoAviso('nome')}
 
         <div data-mapa="telefone">
           <label htmlFor="campo-telefone" className="rotulo">
@@ -583,6 +699,7 @@ export default function FormularioVisita() {
             </p>
           )}
         </div>
+        {caixaDoAviso('telefone')}
       </Passo>
 
       <Passo n={2} titulo="Endereço da família">
@@ -737,6 +854,7 @@ export default function FormularioVisita() {
             onChange={(e) => mudar('complemento', e.target.value)}
           />
         </div>
+        {caixaDoAviso('endereco')}
 
         <div data-mapa="bairro">
           <label htmlFor="campo-bairro" className="rotulo">
@@ -829,49 +947,8 @@ export default function FormularioVisita() {
         </p>
       )}
 
-      {parecidas ? (
-        <section id="aviso-duplicidade" role="alert" data-mapa="duplicidade" className="scroll-mt-6 rounded-2xl border-2 border-amber-400 bg-amber-50 p-4">
-          <h2 className="text-2xl font-extrabold text-stone-900">Parece que esta família já foi cadastrada</h2>
-          <p className="mt-1 text-lg text-stone-800">
-            {parecidas.length === 1 ? 'Já existe um cadastro parecido com este.' : 'Já existem cadastros parecidos com este.'} Confira antes de enviar:
-          </p>
-          <ul className="mt-3 space-y-2">
-            {parecidas.map((p) => (
-              <li key={p.id} className="rounded-xl bg-white p-3 text-lg text-stone-900">
-                <p className="font-bold">
-                  Cadastro nº {p.id}
-                  {p.nome ? ` · ${p.nome}` : ''}
-                </p>
-                {p.endereco && <p>{p.endereco}</p>}
-                <p>Visita: {p.visita}</p>
-                <p className="text-base font-semibold text-amber-900">Igual ou parecido: {p.motivos.join(', ')}</p>
-              </li>
-            ))}
-          </ul>
-          <div className="mt-4 space-y-3">
-            <button
-              type="button"
-              data-mapa="duplicidade-nao-enviar"
-              onClick={() => {
-                setNaoEnviado(true);
-                window.scrollTo({ top: 0 });
-              }}
-              className="w-full rounded-2xl bg-emerald-700 px-6 py-5 text-xl font-extrabold text-white shadow-md active:bg-emerald-800"
-            >
-              É a mesma família: não enviar
-            </button>
-            <button
-              type="button"
-              data-mapa="duplicidade-enviar"
-              disabled={enviando}
-              onClick={() => enviar(undefined, true)}
-              className="w-full rounded-2xl border-2 border-stone-400 bg-white px-6 py-4 text-xl font-bold text-stone-900 active:bg-stone-100 disabled:opacity-70"
-            >
-              {enviando ? 'Enviando…' : 'É outra família: enviar mesmo assim'}
-            </button>
-          </div>
-        </section>
-      ) : (
+      {caixaDoAviso('enviar')}
+      {!(avisoAtual && !avisoAtual.dispensado && avisoAtual.campo === 'enviar') && (
         <button
           type="submit"
           data-mapa="enviar"

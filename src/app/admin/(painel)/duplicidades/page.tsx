@@ -48,7 +48,10 @@ function Lado({ titulo, v }: { titulo: string; v: Visita }) {
         <dt className="text-stone-500">Portal oficial</dt>
         <dd className={v.migrado_em ? 'font-semibold text-emerald-800' : 'font-semibold text-amber-800'}>{v.migrado_em ? 'Migrado' : 'Falta migrar'}</dd>
       </dl>
-      <div className="mt-2 text-right">
+      <div className="mt-2 flex justify-end gap-1">
+        <Link href={`/admin/visitas/${v.id}`} className="rounded-lg px-2 py-1 text-sm font-semibold text-emerald-800 hover:bg-emerald-50">
+          Editar
+        </Link>
         <BotaoExcluir id={v.id} nome={v.responsavel} />
       </div>
     </div>
@@ -83,7 +86,7 @@ function CartaoDoPar({ p }: { p: Par }) {
         <Lado titulo="Já existia" v={p.antiga} />
       </div>
       <div className="mt-3 flex flex-wrap items-center justify-end gap-3 text-sm text-stone-600">
-        <span>Se for a mesma família, exclua um dos dois cadastros acima.</span>
+        <span>Se for a mesma família, exclua um dos dois cadastros acima (ou corrija os dados em Editar).</span>
         <BotaoResolver id={p.id} descartar />
       </div>
     </li>

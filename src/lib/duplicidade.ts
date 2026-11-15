@@ -169,11 +169,13 @@ async function parecerDaIA(nova: Base, lista: { v: Base; c: Comparacao }[]): Pro
 
 export type Apontada = { outra: Base; motivos: string[]; grau: 'alta' | 'media'; parecer: string | null; porIa: boolean };
 
-// Confere um cadastro contra todos os que já existiam antes dele e grava o que achar.
-export async function conferirDuplicidade(id: number, anotar = true): Promise<Apontada[]> {
+// Confere um cadastro contra os que já existiam antes dele e grava o que achar. Com "todas"
+// (depois de uma edição), compara com todos os outros e refaz os pares em aberto desse cadastro.
+export async function conferirDuplicidade(id: number, anotar = true, todas = false): Promise<Apontada[]> {
   const [nova] = await sql<Base>(`SELECT ${CAMPOS} FROM visitas WHERE id = $1`, [id]);
   if (!nova) return [];
-  const anteriores = await sql<Base>(`SELECT ${CAMPOS} FROM visitas WHERE id < $1 ORDER BY id`, [id]);
+  if (todas) await sql('DELETE FROM duplicidades WHERE descartada_em IS NULL AND (visita_id = $1 OR outra_id = $1)', [id]);
+  const anteriores = await sql<Base>(`SELECT ${CAMPOS} FROM visitas WHERE ${todas ? 'id <> $1' : 'id < $1'} ORDER BY id`, [id]);
   const candidatas = anteriores
     .map((v) => ({ v, c: comparar(nova, v) }))
     .filter((x) => x.c.candidata)
@@ -204,7 +206,8 @@ export async function conferirDuplicidade(id: number, anotar = true): Promise<Ap
       `INSERT INTO duplicidades (visita_id, outra_id, motivos, grau, parecer, por_ia) VALUES ($1, $2, $3, $4, $5, $6)
        ON CONFLICT (visita_id, outra_id) DO UPDATE SET motivos = EXCLUDED.motivos, grau = EXCLUDED.grau, parecer = EXCLUDED.parecer, por_ia = EXCLUDED.por_ia
        RETURNING (xmax = 0) AS nova`,
-      [id, a.outra.id, a.motivos, a.grau, a.parecer, a.porIa],
+      // O par fica sempre como (mais novo, mais antigo)
+      [Math.max(id, a.outra.id), Math.min(id, a.outra.id), a.motivos, a.grau, a.parecer, a.porIa],
     );
     if (linha?.nova && anotar) {
       await registrar('visita.duplicidade', { nome: 'Sistema' }, `Nº ${nova.id} · ${nova.responsavel}`, {

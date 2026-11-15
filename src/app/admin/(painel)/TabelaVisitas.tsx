@@ -240,7 +240,10 @@ export default function TabelaVisitas({ linhas, superAdmin }: { linhas: LinhaVis
           <div>{l.aparelho}</div>
         </td>
       )}
-      <td className="px-2 py-2.5 text-right">
+      <td className="px-2 py-2.5 text-right whitespace-nowrap">
+        <Link href={`/admin/visitas/${l.id}`} className="rounded-lg px-2 py-1 text-sm font-semibold text-emerald-800 hover:bg-emerald-50">
+          Editar
+        </Link>
         <BotaoExcluir id={l.id} nome={l.responsavel} />
       </td>
     </tr>

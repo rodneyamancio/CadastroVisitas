@@ -22,6 +22,7 @@ export const ACOES: Record<string, string> = {
   'usuario.excluido': 'Excluiu usuário',
   'visita.criada': 'Cadastro recebido pelo formulário',
   'visita.excluida': 'Excluiu visita',
+  'visita.editada': 'Alterou dados da visita',
   'visita.exportada': 'Exportou visitas para Excel',
   'visita.localizar': 'Mandou localizar endereços no mapa',
   'visita.bairros': 'Conferiu os bairros pela rua',

@@ -9,6 +9,7 @@ import { nomeDia, nomePeriodo } from '@/lib/config';
 import { MODELOS_ANTHROPIC, configuracaoIA, gravar, gravarChaveApi, iaPronta, type Provedor } from '@/lib/configuracoes';
 import { sql } from '@/lib/db';
 import { reconferirDuplicidades, resolverDuplicidade } from '@/lib/duplicidade';
+import { editarVisita, type Mudanca } from '@/lib/edicao';
 import { ErroEmail, emailPronto, emails, enviarEmail } from '@/lib/email';
 import { ErroIA, testarConexao } from '@/lib/ia';
 import { dentroDoLimite } from '@/lib/limite';
@@ -72,6 +73,36 @@ export async function excluirVisita(id: number): Promise<void> {
     });
   }
   revalidatePath('/admin', 'layout');
+}
+
+export type RetornoEdicao = { erro?: string; erros?: Record<string, string>; ok?: string; mudancas?: Mudanca[] } | undefined;
+
+// Alteração dos dados de uma visita pelo painel.
+export async function salvarVisita(id: number, _anterior: RetornoEdicao, fd: FormData): Promise<RetornoEdicao> {
+  const eu = await exigirUsuario();
+  const confirmar = campo(fd, 'confirmar');
+  const r = await editarVisita(
+    id,
+    {
+      responsavel: campo(fd, 'responsavel'),
+      telefone: campo(fd, 'telefone'),
+      endereco: campo(fd, 'endereco'),
+      numero: campo(fd, 'numero'),
+      complemento: campo(fd, 'complemento'),
+      bairro: campo(fd, 'bairro'),
+      cep: campo(fd, 'cep'),
+      observacoes: campo(fd, 'observacoes'),
+      data_visita: campo(fd, 'data_visita'),
+      periodo: campo(fd, 'periodo'),
+      confirmar_contato: confirmar === 'sim' ? true : confirmar === 'nao' ? false : null,
+    },
+    eu,
+    'painel',
+  );
+  if ('erro' in r) return { erro: r.erro, erros: r.erros };
+  if (!r.mudancas.length) return { ok: 'Nada foi alterado: os dados já estavam assim.' };
+  revalidatePath('/admin', 'layout');
+  return { ok: 'Alterações salvas.', mudancas: r.mudancas };
 }
 
 // Controle do que já foi passado para o portal oficial.

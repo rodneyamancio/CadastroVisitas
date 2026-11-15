@@ -5,6 +5,7 @@ import { ACOES, CATEGORIAS, listarAuditoria, registrar } from '../auditoria';
 import { DIAS, PERIODOS, PRECISOES, TITULO, nomeDia, nomePeriodo } from '../config';
 import { sql } from '../db';
 import { listarDuplicidades } from '../duplicidade';
+import { editarVisita, type Edicao } from '../edicao';
 import { PERIODOS_SITE, estatisticasDoSite } from '../estatisticas';
 import { aprovarPedidoDeAcesso, pedidosPendentes, recusarPedidoDeAcesso } from '../pedidos';
 import { ultimoRoteiro } from '../roteiro';
@@ -19,7 +20,7 @@ import type { DonoDoToken } from './tokens';
 const INSTRUCOES = `Servidor do "${TITULO}": cadastro de famílias que pediram visita nos dias 28/11/2026 (sábado) e 29/11/2026 (domingo), de manhã ou à tarde.
 
 - Para saber o que chegou de novo, use "novidades": ela devolve só os cadastros recebidos desde a última consulta feita com este token.
-- Este sistema é paralelo ao portal oficial: cada visita informa em "portal_oficial" se já foi passada para lá. Para conferir os dados antes de passar, use "ver_visita"; depois de cadastrar no portal oficial, marque com "marcar_portal_oficial". "listar_visitas" com portal_oficial "falta" mostra o que ainda falta.
+- Este sistema é paralelo ao portal oficial: cada visita informa em "portal_oficial" se já foi passada para lá. Para conferir os dados antes de passar, use "ver_visita"; depois de cadastrar no portal oficial, marque com "marcar_portal_oficial". Para corrigir dados de um cadastro, use "editar_visita". "listar_visitas" com portal_oficial "falta" mostra o que ainda falta.
 - "listar_visitas", "ver_visita" e "resumo_visitas" consultam as famílias cadastradas; "estatisticas_site" mostra quantas pessoas entraram no formulário e quantas concluíram.
 - Os dados são pessoais (nome, telefone, endereço): use só para organizar as visitas.
 - Datas e horas estão no horário de Brasília.`;
@@ -419,6 +420,52 @@ export function criarServidor(dono: DonoDoToken, assinaturas: Set<string>): McpS
           visitas: visitas.map((v) => visitaParaMcp(v, superAdmin)),
         },
         `${mudaram.length} ${mudaram.length === 1 ? 'visita' : 'visitas'} ${marcar ? (mudaram.length === 1 ? 'marcada como migrada' : 'marcadas como migradas') : mudaram.length === 1 ? 'desmarcada' : 'desmarcadas'}. No portal oficial: ${migradas} de ${total}; faltam ${total - migradas}.`,
+      );
+    },
+  );
+
+  servidor.registerTool(
+    'editar_visita',
+    {
+      title: 'Alterar dados de uma visita',
+      description:
+        'Altera os dados de uma família cadastrada. Informe o número do cadastro em "id" e só os campos que devem mudar; os outros ficam como estão. Para apagar um campo opcional (complemento, bairro, CEP, como achar a casa), mande texto vazio. Se a rua ou o número mudarem e o bairro não for informado, o sistema confere o bairro pelos Correios; a posição no mapa e a verificação de duplicidade são refeitas. Tudo fica na auditoria com o valor de antes e o de depois. Confira os dados com "ver_visita" antes de alterar.',
+      inputSchema: {
+        id: z.number().int().positive().describe('Número do cadastro'),
+        responsavel: z.string().max(120).optional(),
+        telefone: z.string().max(20).optional().describe('Com DDD'),
+        rua: z.string().max(160).optional(),
+        numero: z.string().max(12).optional().describe('Número da casa, ou S/N'),
+        complemento: z.string().max(120).optional(),
+        bairro: z.string().max(80).optional(),
+        cep: z.string().max(10).optional(),
+        como_achar_a_casa: z.string().max(500).optional(),
+        dia: z.enum(['sabado', 'domingo']).optional().describe('sabado = 28/11/2026, domingo = 29/11/2026'),
+        periodo: z.enum(['manha', 'tarde']).optional(),
+        entrar_em_contato_antes: z.enum(['sim', 'nao', 'nao_informado']).optional().describe('Se é preciso entrar em contato com a família antes para confirmar a visita'),
+      },
+      annotations: { title: 'Alterar dados de uma visita', readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    },
+    async (a) => {
+      const pedido: Edicao = {
+        responsavel: a.responsavel,
+        telefone: a.telefone,
+        endereco: a.rua,
+        numero: a.numero,
+        complemento: a.complemento,
+        bairro: a.bairro,
+        cep: a.cep,
+        observacoes: a.como_achar_a_casa,
+        data_visita: a.dia ? DIAS[a.dia === 'sabado' ? 0 : 1].valor : undefined,
+        periodo: a.periodo,
+        confirmar_contato: a.entrar_em_contato_antes === undefined ? undefined : a.entrar_em_contato_antes === 'nao_informado' ? null : a.entrar_em_contato_antes === 'sim',
+      };
+      if (Object.values(pedido).every((v) => v === undefined)) return falha('Informe pelo menos um campo para alterar, além do "id".');
+      const r = await editarVisita(a.id, pedido, dono, `MCP (token ${dono.nomeDoToken})`);
+      if ('erro' in r) return falha(r.erros ? `${r.erro} ${Object.values(r.erros).join(' ')}` : r.erro);
+      return texto(
+        { alteracoes: r.mudancas, visita: visitaParaMcp(r.visita, superAdmin) },
+        r.mudancas.length ? `${r.mudancas.length} ${r.mudancas.length === 1 ? 'campo alterado' : 'campos alterados'} no cadastro nº ${r.visita.id}.` : 'Nada mudou: os dados já estavam assim.',
       );
     },
   );
