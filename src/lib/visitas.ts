@@ -11,6 +11,8 @@ export type Visita = {
   numero: string;
   complemento: string | null;
   bairro: string | null;
+  // Bairro que estava no cadastro antes de o sistema trocar pelo dos Correios
+  bairro_informado: string | null;
   cidade: string | null;
   uf: string | null;
   cep: string | null;

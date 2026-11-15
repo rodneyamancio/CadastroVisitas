@@ -70,7 +70,8 @@ claude mcp add --transport http missao-fraternal https://SEU-DOMINIO/api/mcp --h
 ```
 
 - **Ferramentas**: `novidades` (o que chegou desde a última consulta com o mesmo token), `listar_visitas`,
-  `ver_visita`, `resumo_visitas`, `estatisticas_site`, `ultimo_roteiro` e `conferir_bairros`. Para o super admin:
+  `ver_visita` (todos os dados, pelo número ou por nome, telefone ou rua), `marcar_portal_oficial` (marca ou desmarca
+  o que já foi migrado), `resumo_visitas`, `estatisticas_site`, `ultimo_roteiro` e `conferir_bairros`. Para o super admin:
   `pedidos_de_acesso`, `aprovar_pedido`, `recusar_pedido`, `listar_usuarios` e `auditoria`.
 - **Recursos**: `missao://visitas/recentes`, `missao://visitas/resumo`, `missao://visitas/{id}` e, para o super
   admin, `missao://usuarios/pedidos`.

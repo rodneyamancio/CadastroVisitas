@@ -7,7 +7,7 @@ import { sql } from '../db';
 import { PERIODOS_SITE, estatisticasDoSite } from '../estatisticas';
 import { aprovarPedidoDeAcesso, pedidosPendentes, recusarPedidoDeAcesso } from '../pedidos';
 import { ultimoRoteiro } from '../roteiro';
-import { enderecoCompleto, reconferirBairros, type Visita } from '../visitas';
+import { enderecoCompleto, marcarNoPortal, reconferirBairros, type Visita } from '../visitas';
 import { RECURSOS } from './sessoes';
 import type { DonoDoToken } from './tokens';
 
@@ -18,6 +18,7 @@ import type { DonoDoToken } from './tokens';
 const INSTRUCOES = `Servidor do "${TITULO}": cadastro de famílias que pediram visita nos dias 28/11/2026 (sábado) e 29/11/2026 (domingo), de manhã ou à tarde.
 
 - Para saber o que chegou de novo, use "novidades": ela devolve só os cadastros recebidos desde a última consulta feita com este token.
+- Este sistema é paralelo ao portal oficial: cada visita informa em "portal_oficial" se já foi passada para lá. Para conferir os dados antes de passar, use "ver_visita"; depois de cadastrar no portal oficial, marque com "marcar_portal_oficial". "listar_visitas" com portal_oficial "falta" mostra o que ainda falta.
 - "listar_visitas", "ver_visita" e "resumo_visitas" consultam as famílias cadastradas; "estatisticas_site" mostra quantas pessoas entraram no formulário e quantas concluíram.
 - Os dados são pessoais (nome, telefone, endereço): use só para organizar as visitas.
 - Datas e horas estão no horário de Brasília.`;
@@ -38,12 +39,15 @@ function visitaParaMcp(v: Visita, superAdmin: boolean) {
     id: v.id,
     responsavel: v.responsavel,
     telefone: telefone(v.telefone),
+    telefone_so_numeros: v.telefone,
     whatsapp: `https://wa.me/55${v.telefone}`,
     endereco: enderecoCompleto(v),
     rua: v.endereco,
     numero: v.numero,
     complemento: v.complemento,
     bairro: v.bairro,
+    // Bairro que estava no cadastro antes de o sistema trocar pelo dos Correios (se trocou)
+    bairro_antes_da_conferencia: v.bairro_informado ?? null,
     cidade: v.cidade,
     uf: v.uf,
     cep: v.cep,
@@ -258,15 +262,37 @@ export function criarServidor(dono: DonoDoToken, assinaturas: Set<string>): McpS
     'ver_visita',
     {
       title: 'Ver uma visita',
-      description: 'Mostra todos os dados de uma família cadastrada, pelo número do cadastro.',
-      inputSchema: { id: z.number().int().positive().describe('Número do cadastro') },
+      description:
+        'Mostra todos os dados de uma família cadastrada (responsável, telefone, endereço completo, como achar a casa, dia e horário, se é preciso confirmar antes, posição no mapa e situação no portal oficial). Informe o número do cadastro em "id" ou procure por nome, telefone ou rua em "busca"; se a busca achar mais de uma família, devolve todas (até 10).',
+      inputSchema: {
+        id: z.number().int().positive().optional().describe('Número do cadastro'),
+        busca: z.string().min(2).max(100).optional().describe('Trecho do nome do responsável, do telefone ou da rua'),
+      },
       annotations: { title: 'Ver uma visita', ...leitura },
     },
-    async ({ id }) => {
-      const [v] = await sql<Visita>('SELECT * FROM visitas WHERE id = $1', [id]);
-      if (!v) return falha(`Não existe cadastro com o número ${id}.`);
-      await anotar('ver_visita', { visita: `Nº ${v.id} · ${v.responsavel}` });
-      return texto(visitaParaMcp(v, superAdmin));
+    async ({ id, busca }) => {
+      if (id != null) {
+        const [v] = await sql<Visita>('SELECT * FROM visitas WHERE id = $1', [id]);
+        if (!v) return falha(`Não existe cadastro com o número ${id}.`);
+        await anotar('ver_visita', { visita: `Nº ${v.id} · ${v.responsavel}` });
+        return texto(visitaParaMcp(v, superAdmin));
+      }
+      if (!busca?.trim()) return falha('Informe o número do cadastro em "id" ou um trecho do nome, do telefone ou da rua em "busca".');
+      const trecho = `%${busca.trim().replace(/[%_\\]/g, '\\$&')}%`;
+      const digitos = busca.replace(/\D/g, '');
+      const achadas = await sql<Visita>(
+        `SELECT * FROM visitas
+         WHERE responsavel ILIKE $1 OR endereco ILIKE $1 OR ($2 <> '' AND telefone LIKE '%' || $2 || '%')
+         ORDER BY id LIMIT 11`,
+        [trecho, digitos.length >= 4 ? digitos : ''],
+      );
+      if (!achadas.length) return falha(`Nenhum cadastro encontrado com "${busca.trim()}".`);
+      await anotar('ver_visita', { busca: busca.trim(), encontradas: achadas.length });
+      if (achadas.length === 1) return texto(visitaParaMcp(achadas[0], superAdmin));
+      return texto(
+        { visitas: achadas.slice(0, 10).map((v) => visitaParaMcp(v, superAdmin)) },
+        achadas.length > 10 ? 'Mais de 10 famílias com este trecho; aqui estão as 10 primeiras. Use um trecho mais completo.' : `${achadas.length} famílias com este trecho.`,
+      );
     },
   );
 
@@ -345,6 +371,54 @@ export function criarServidor(dono: DonoDoToken, assinaturas: Set<string>): McpS
           }),
         })),
       });
+    },
+  );
+
+  servidor.registerTool(
+    'marcar_portal_oficial',
+    {
+      title: 'Marcar como migrada para o portal oficial',
+      description:
+        'Marca uma ou várias visitas como já passadas para o portal oficial (ou desmarca, com "migrado": false). Use depois de cadastrar a família no portal oficial. Fica registrado quem marcou e quando; marcar de novo o que já estava marcado não muda nada. Devolve os dados completos de cada visita e quantas ainda faltam.',
+      inputSchema: {
+        ids: z.array(z.number().int().positive()).min(1).max(200).describe('Números dos cadastros'),
+        migrado: z.boolean().optional().describe('true (padrão): marcar como migrada; false: desmarcar'),
+      },
+      annotations: { title: 'Marcar como migrada para o portal oficial', readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    },
+    async ({ ids, migrado }) => {
+      const marcar = migrado ?? true;
+      const unicos = [...new Set(ids)];
+      const antes = await sql<{ id: number; migrado: boolean }>('SELECT id, migrado_em IS NOT NULL AS migrado FROM visitas WHERE id = ANY($1::int[])', [unicos]);
+      const jaEstava = new Map(antes.map((a) => [a.id, a.migrado]));
+      const visitas: Visita[] = [];
+      const mudaram: number[] = [];
+      for (const id of unicos) {
+        if (!jaEstava.has(id)) continue;
+        const v = await marcarNoPortal(id, marcar, dono.nome);
+        if (!v) continue;
+        visitas.push(v);
+        if (jaEstava.get(id) !== marcar) {
+          mudaram.push(id);
+          await registrar(marcar ? 'visita.portal' : 'visita.portal.desfeito', dono, `Nº ${v.id} · ${v.responsavel}`, {
+            origem: `MCP (token ${dono.nomeDoToken})`,
+            endereço: enderecoCompleto(v),
+          });
+        }
+      }
+      const naoEncontradas = unicos.filter((id) => !jaEstava.has(id));
+      if (!visitas.length) return falha(`Nenhum cadastro encontrado com ${unicos.length === 1 ? 'o número' : 'os números'} ${unicos.join(', ')}.`);
+      const [{ total, migradas }] = await sql<{ total: number; migradas: number }>('SELECT count(*)::int AS total, count(migrado_em)::int AS migradas FROM visitas');
+      return texto(
+        {
+          [marcar ? 'marcadas_agora' : 'desmarcadas_agora']: mudaram,
+          ja_estavam_assim: visitas.map((v) => v.id).filter((id) => !mudaram.includes(id)),
+          cadastros_nao_encontrados: naoEncontradas,
+          portal_oficial: { migradas, faltam: total - migradas },
+          visitas: visitas.map((v) => visitaParaMcp(v, superAdmin)),
+        },
+        `${mudaram.length} ${mudaram.length === 1 ? 'visita' : 'visitas'} ${marcar ? (mudaram.length === 1 ? 'marcada como migrada' : 'marcadas como migradas') : mudaram.length === 1 ? 'desmarcada' : 'desmarcadas'}. No portal oficial: ${migradas} de ${total}; faltam ${total - migradas}.`,
+      );
     },
   );
 

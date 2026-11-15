@@ -11,7 +11,8 @@ const quando = new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle:
 const FERRAMENTAS = [
   { nome: 'novidades', para: 'famílias cadastradas desde a última consulta (e pedidos de acesso, para o super admin)' },
   { nome: 'listar_visitas', para: 'visitas com filtros por dia, período, bairro, texto e data do cadastro' },
-  { nome: 'ver_visita', para: 'todos os dados de um cadastro' },
+  { nome: 'ver_visita', para: 'todos os dados de um cadastro, pelo número ou procurando por nome, telefone ou rua' },
+  { nome: 'marcar_portal_oficial', para: 'marca (ou desmarca) visitas como já migradas para o portal oficial' },
   { nome: 'resumo_visitas', para: 'totais por dia, período e bairro' },
   { nome: 'estatisticas_site', para: 'quantos entraram no formulário e quantos concluíram' },
   { nome: 'ultimo_roteiro', para: 'último roteiro montado pelo assistente de IA' },
