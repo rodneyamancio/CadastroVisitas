@@ -2,6 +2,7 @@ import ExcelJS from 'exceljs';
 import { registrar } from '@/lib/auditoria';
 import { usuarioAtual } from '@/lib/auth';
 import { PRECISOES, nomeDia, nomePeriodo } from '@/lib/config';
+import { suspeitasPorVisita } from '@/lib/duplicidade';
 import { lerFiltros, listarVisitas } from '@/lib/visitas';
 
 export const dynamic = 'force-dynamic';
@@ -14,7 +15,7 @@ export async function GET(req: Request) {
   const superAdmin = usuario.perfil === 'super_admin';
 
   const filtros = lerFiltros(Object.fromEntries(new URL(req.url).searchParams));
-  const visitas = await listarVisitas(filtros);
+  const [visitas, suspeitas] = await Promise.all([listarVisitas(filtros), suspeitasPorVisita()]);
 
   const livro = new ExcelJS.Workbook();
   const aba = livro.addWorksheet('Visitas', { views: [{ state: 'frozen', ySplit: 1 }] });
@@ -40,6 +41,7 @@ export async function GET(req: Request) {
     { header: 'No portal oficial', key: 'portal', width: 16 },
     { header: 'Migrado em', key: 'portal_em', width: 18 },
     { header: 'Migrado por', key: 'portal_por', width: 24 },
+    { header: 'Possível duplicidade com', key: 'duplicidade', width: 36 },
     // Dados de quem preencheu: só na planilha do super admin
     ...(superAdmin
       ? [
@@ -64,6 +66,7 @@ export async function GET(req: Request) {
       portal: v.migrado_em ? 'Migrado' : 'Falta migrar',
       portal_em: v.migrado_em ? quando.format(v.migrado_em) : '',
       portal_por: v.migrado_por ?? '',
+      duplicidade: (suspeitas.get(v.id) ?? []).map((s) => `Nº ${s.id} · ${s.responsavel}`).join('; '),
       aparelho: v.extra?.aparelho ?? '',
       tempo: v.extra?.tempoS ?? '',
     });

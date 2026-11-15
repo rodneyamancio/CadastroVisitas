@@ -4,6 +4,7 @@ import { ipDoCliente } from '@/lib/auth';
 import { CIDADE_PADRAO, DIAS, PERIODOS, UF_PADRAO, nomeDia, nomePeriodo } from '@/lib/config';
 import { sql } from '@/lib/db';
 import { resumoDoAparelho } from '@/lib/dispositivo';
+import { conferirDuplicidade, parecidasCom } from '@/lib/duplicidade';
 import { dentroDaRegiao } from '@/lib/geocode';
 import { dentroDoLimite } from '@/lib/limite';
 import { avisarNovaVisita } from '@/lib/mcp/sessoes';
@@ -41,6 +42,24 @@ export async function POST(req: Request) {
   if (!PERIODOS.some((p) => p.valor === periodo)) erros.periodo = 'Escolha o horário da visita.';
   if (Object.keys(erros).length) return NextResponse.json({ erro: 'Confira os campos destacados.', erros }, { status: 422 });
 
+  // Antes de gravar: se já existe cadastro parecido, pergunta a quem está cadastrando se é a mesma família.
+  // Só para o formulário novo (que sabe mostrar o aviso); com "confirmado", grava mesmo assim.
+  const complemento = texto(c.complemento, 120) || null;
+  const confirmado = c.confirmado === true;
+  if (c.avisarDuplicidade === true && !confirmado) {
+    const parecidas = await parecidasCom({ responsavel: nome, telefone, endereco: rua, numero, complemento }).catch((e) => {
+      console.error('Falha ao procurar cadastro parecido', e);
+      return [];
+    });
+    if (parecidas.length) {
+      await registrar('visita.duplicidade.aviso', { nome: 'Formulário público' }, nome, {
+        endereço: `${rua}, ${numero}`,
+        'parecido com': parecidas.map((p) => `Nº ${p.id} (${p.motivos.join(', ')})`).join(' · '),
+      });
+      return NextResponse.json({ erro: 'Parece que esta família já foi cadastrada.', duplicidade: parecidas }, { status: 409 });
+    }
+  }
+
   // Posição inicial: GPS do celular (exata) ou a rua escolhida na lista. O número da casa é localizado depois.
   let lat: number | null = Number(c.lat);
   let lng: number | null = Number(c.lng);
@@ -75,7 +94,7 @@ export async function POST(req: Request) {
       telefone,
       rua,
       numero,
-      texto(c.complemento, 120) || null,
+      complemento,
       texto(c.bairro, 80) || null,
       texto(c.cidade, 80) || CIDADE_PADRAO,
       texto(c.uf, 30) || UF_PADRAO,
@@ -97,6 +116,7 @@ export async function POST(req: Request) {
     endereço: `${rua}, ${numero}`,
     visita: `${nomeDia(dia)} · ${nomePeriodo(periodo)}`,
     'confirmar antes': confirmarContato == null ? 'não informado' : confirmarContato ? 'sim' : 'não',
+    ...(confirmado ? { 'aviso de duplicidade': 'viu o aviso e enviou mesmo assim' } : {}),
     aparelho: extra.aparelho,
   });
 
@@ -108,6 +128,8 @@ export async function POST(req: Request) {
     // Avisa quem está conectado pelo MCP (já com o bairro conferido)
     await avisarNovaVisita(nova.id).catch((e) => console.error('Falha ao avisar pelo MCP', nova.id, e));
     if (precisao !== 'gps') await localizarVisita(nova.id).catch((e) => console.error('Falha ao localizar endereço', nova.id, e));
+    // Por último (a IA pode demorar): procura cadastro repetido por nome, telefone e endereço
+    await conferirDuplicidade(nova.id).catch((e) => console.error('Falha ao conferir duplicidade', nova.id, e));
   });
   return NextResponse.json({ ok: true, id: nova.id });
 }

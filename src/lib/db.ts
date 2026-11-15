@@ -112,6 +112,21 @@ ALTER TABLE visitas ADD COLUMN IF NOT EXISTS migrado_por TEXT;
 -- Entrar em contato com a família antes, para confirmar a visita? (nulo = cadastro antigo, sem resposta)
 ALTER TABLE visitas ADD COLUMN IF NOT EXISTS confirmar_contato BOOLEAN;
 
+-- Possíveis cadastros repetidos: "visita_id" é o cadastro mais novo e "outra_id" o que já existia.
+CREATE TABLE IF NOT EXISTS duplicidades (
+  id SERIAL PRIMARY KEY,
+  visita_id INT NOT NULL REFERENCES visitas(id) ON DELETE CASCADE,
+  outra_id INT NOT NULL REFERENCES visitas(id) ON DELETE CASCADE,
+  motivos TEXT[] NOT NULL,
+  grau TEXT NOT NULL CHECK (grau IN ('alta', 'media')),
+  parecer TEXT,
+  por_ia BOOLEAN NOT NULL DEFAULT FALSE,
+  descartada_em TIMESTAMPTZ,
+  descartada_por TEXT,
+  criado_em TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (visita_id, outra_id)
+);
+
 -- Tokens de acesso ao servidor MCP (guardamos só o resumo). "visto_*" marca até onde
 -- o dono do token já viu as novidades.
 CREATE TABLE IF NOT EXISTS tokens_mcp (

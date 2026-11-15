@@ -2,6 +2,7 @@ import { cookies } from 'next/headers';
 import Link from 'next/link';
 import { exigirUsuario } from '@/lib/auth';
 import { DIAS, PERIODOS, PRECISOES, nomeDia, nomePeriodo } from '@/lib/config';
+import { suspeitasPorVisita } from '@/lib/duplicidade';
 import { enderecoCompleto, filtrosParaUrl, lerFiltros, listarVisitas, resumoVisitas, type Visita } from '@/lib/visitas';
 import BotaoBairros from './BotaoBairros';
 import BotaoExcluir from './BotaoExcluir';
@@ -67,7 +68,8 @@ export default async function Painel({ searchParams }: { searchParams: Promise<R
   const superAdmin = usuario.perfil === 'super_admin';
   const visao: Visao = (await cookies()).get('visao')?.value === 'tabela' ? 'tabela' : 'cards';
   const filtros = lerFiltros(await searchParams);
-  const [visitas, resumo] = await Promise.all([listarVisitas(filtros), resumoVisitas()]);
+  const [visitas, resumo, suspeitas] = await Promise.all([listarVisitas(filtros), resumoVisitas(), suspeitasPorVisita()]);
+  const paresSuspeitos = new Set([...suspeitas.values()].flat().map((s) => s.par)).size;
   const consulta = filtrosParaUrl(filtros);
   const filtrando = Boolean(consulta);
   const faltam = resumo.total - resumo.migradas;
@@ -94,6 +96,7 @@ export default async function Painel({ searchParams }: { searchParams: Promise<R
           migrado: v.migrado_em != null,
           detalhePortal: detalheDoPortal(v),
           linkMapa: linkMapa(v),
+          duplicidades: (suspeitas.get(v.id) ?? []).map((s) => ({ par: s.par, texto: `Nº ${s.id} · ${s.responsavel}` })),
           ...(superAdmin ? { ip: v.ip ?? '', aparelho: v.extra?.aparelho ?? '' } : {}),
         }));
 
@@ -139,6 +142,20 @@ export default async function Painel({ searchParams }: { searchParams: Promise<R
           <div className="mt-2 h-2 overflow-hidden rounded-full bg-stone-200" aria-hidden="true">
             <div className="h-full rounded-full bg-emerald-600" style={{ width: `${(resumo.migradas / resumo.total) * 100}%` }} />
           </div>
+        </section>
+      )}
+
+      {paresSuspeitos > 0 && (
+        <section aria-label="Duplicidades" className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 rounded-xl border border-amber-300 bg-amber-50 p-4 text-amber-950">
+          <p>
+            <span className="font-bold">
+              {paresSuspeitos} {paresSuspeitos === 1 ? 'possível duplicidade' : 'possíveis duplicidades'}
+            </span>{' '}
+            para conferir: cadastros com nome, telefone ou endereço parecidos.
+          </p>
+          <Link href="/admin/duplicidades" className="font-semibold underline">
+            Conferir
+          </Link>
         </section>
       )}
 
@@ -239,6 +256,13 @@ export default async function Painel({ searchParams }: { searchParams: Promise<R
                 </div>
                 <p className="mt-1 text-stone-800">{enderecoCompleto(v)}</p>
                 {v.observacoes && <p className="mt-1 text-sm text-stone-600">Como achar: {v.observacoes}</p>}
+                {(suspeitas.get(v.id) ?? []).map((s) => (
+                  <p key={s.par} className="mt-2 text-sm">
+                    <Link href={`/admin/duplicidades#par-${s.par}`} className="rounded-full bg-amber-100 px-3 py-1 font-semibold text-amber-900 underline">
+                      Possível duplicidade com Nº {s.id} · {s.responsavel}
+                    </Link>
+                  </p>
+                ))}
                 {v.confirmar_contato != null && (
                   <p className="mt-2 text-sm">
                     {v.confirmar_contato ? (

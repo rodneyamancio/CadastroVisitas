@@ -27,6 +27,9 @@ const ROTULOS: Record<string, string> = {
   periodo: 'Horário da visita',
   contato: 'Confirmar a visita antes',
   enviar: 'Botão "Enviar cadastro"',
+  duplicidade: 'Aviso de cadastro parecido',
+  'duplicidade-nao-enviar': 'Botão "É a mesma família: não enviar"',
+  'duplicidade-enviar': 'Botão "É outra família: enviar mesmo assim"',
   'outra-familia': 'Botão "Cadastrar outra família"',
   pagina: 'Fora do formulário',
 };

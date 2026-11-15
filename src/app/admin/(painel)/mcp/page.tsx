@@ -16,6 +16,7 @@ const FERRAMENTAS = [
   { nome: 'resumo_visitas', para: 'totais por dia, período e bairro' },
   { nome: 'estatisticas_site', para: 'quantos entraram no formulário e quantos concluíram' },
   { nome: 'ultimo_roteiro', para: 'último roteiro montado pelo assistente de IA' },
+  { nome: 'possiveis_duplicidades', para: 'cadastros que podem ser da mesma família, com o que é parecido' },
   { nome: 'conferir_bairros', para: 'confere de novo os bairros pela rua (Correios)' },
 ];
 const SO_SUPER_ADMIN = [

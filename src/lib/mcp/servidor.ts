@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { ACOES, CATEGORIAS, listarAuditoria, registrar } from '../auditoria';
 import { DIAS, PERIODOS, PRECISOES, TITULO, nomeDia, nomePeriodo } from '../config';
 import { sql } from '../db';
+import { listarDuplicidades } from '../duplicidade';
 import { PERIODOS_SITE, estatisticasDoSite } from '../estatisticas';
 import { aprovarPedidoDeAcesso, pedidosPendentes, recusarPedidoDeAcesso } from '../pedidos';
 import { ultimoRoteiro } from '../roteiro';
@@ -418,6 +419,32 @@ export function criarServidor(dono: DonoDoToken, assinaturas: Set<string>): McpS
           visitas: visitas.map((v) => visitaParaMcp(v, superAdmin)),
         },
         `${mudaram.length} ${mudaram.length === 1 ? 'visita' : 'visitas'} ${marcar ? (mudaram.length === 1 ? 'marcada como migrada' : 'marcadas como migradas') : mudaram.length === 1 ? 'desmarcada' : 'desmarcadas'}. No portal oficial: ${migradas} de ${total}; faltam ${total - migradas}.`,
+      );
+    },
+  );
+
+  servidor.registerTool(
+    'possiveis_duplicidades',
+    {
+      title: 'Possíveis duplicidades',
+      description:
+        'Lista os cadastros que podem ser da mesma família (nome, telefone ou endereço parecidos), apontados pelo sistema a cada cadastro novo. Cada item traz os dois cadastros completos, o que é parecido e o parecer da IA, quando houver. Os pares já marcados no painel como "não é duplicidade" não aparecem.',
+      inputSchema: {},
+      annotations: { title: 'Possíveis duplicidades', ...leitura },
+    },
+    async () => {
+      const pares = await listarDuplicidades('abertas');
+      await anotar('possiveis_duplicidades', { pares: pares.length });
+      return texto(
+        pares.map((p) => ({
+          certeza: p.grau === 'alta' ? 'muito provável' : 'vale conferir',
+          o_que_e_parecido: p.motivos,
+          parecer_da_ia: p.parecer,
+          apontada_em: quando(p.criado_em),
+          cadastro_mais_novo: visitaParaMcp(p.nova, superAdmin),
+          cadastro_que_ja_existia: visitaParaMcp(p.antiga, superAdmin),
+        })),
+        pares.length ? `${pares.length} ${pares.length === 1 ? 'possível duplicidade' : 'possíveis duplicidades'} para conferir.` : 'Nenhuma possível duplicidade no momento.',
       );
     },
   );

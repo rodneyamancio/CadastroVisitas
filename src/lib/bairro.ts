@@ -33,7 +33,7 @@ const TITULO =
   /^(doutor|doutora|professor|professora|padre|coronel|capitao|tenente|sargento|marechal|general|engenheiro|presidente|brigadeiro|desembargador|conselheiro|deputado|senador|vereador|comendador|major|dom|dona|frei|monsenhor)$/;
 
 // "R. Dr. Ernesto Maieta, 120" -> { tipo: 'rua', nome: 'doutor ernesto maieta', semTitulo: 'ernesto maieta' }
-function partesDaRua(rua: string) {
+export function partesDaRua(rua: string) {
   const palavras = semAcento(rua.split(',')[0]).split(' ').filter(Boolean);
   let tipo = '';
   if (palavras.length > 1) {
@@ -61,7 +61,7 @@ function distancia(a: string, b: string): number {
   return anterior[b.length];
 }
 
-const parecido = (a: string, b: string) => (a && b ? 1 - distancia(a, b) / Math.max(a.length, b.length) : 0);
+export const parecido = (a: string, b: string) => (a && b ? 1 - distancia(a, b) / Math.max(a.length, b.length) : 0);
 
 // Trechos dos Correios: "até 999/1000", "de 1001/1002 a 1899/1900", "de 1931/1932 ao fim", "lado ímpar"…
 function trecho(complemento: string): { de: number; ate: number; lado: '' | 'par' | 'impar'; unico: boolean } {

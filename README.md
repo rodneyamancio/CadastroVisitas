@@ -36,6 +36,13 @@ docker compose -f docker-compose.yml -f docker-compose.dev.yml up
   O botão **Conferir bairros** olha de novo o bairro de todas as visitas pelo nome da rua e corrige os errados.
   A coluna **Portal oficial** marca o que já foi passado para o portal oficial (este sistema é paralelo a ele):
   mostra quem marcou e quando, tem filtro "Falta migrar" e contador do que falta, e sai na planilha.
+- **Duplicidades** (`/admin/duplicidades`): a cada cadastro novo o sistema compara nome, telefone e endereço com os
+  cadastros que já existiam e aponta os que parecem ser da mesma família, lado a lado, com o que é parecido. Com uma
+  IA conectada em Configurações, ela analisa os casos parecidos e dá um parecer (recebe nome e endereço, sem o
+  telefone); sem IA, valem só as regras. Dá para excluir um dos dois, marcar "não é duplicidade" ou verificar todos
+  de novo. O formulário público também avisa quem está cadastrando quando já existe um cadastro parecido (só pelas
+  regras, na hora) e pergunta se é a mesma família. O aviso mostra só o que a pessoa já digitou de forma parecida:
+  telefone igual não revela o nome nem o endereço do outro cadastro.
 - **Mapa de calor** (`/admin/mapa`): filtros por dia e horário, casas individuais e ranking por bairro.
 - **Site** (`/admin/site`): quantas pessoas entram, até que etapa do formulário chegam, quantas cadastram,
   onde o envio trava, aparelho usado e mapa de calor dos toques no formulário. Os dados são anônimos.
@@ -71,7 +78,7 @@ claude mcp add --transport http missao-fraternal https://SEU-DOMINIO/api/mcp --h
 
 - **Ferramentas**: `novidades` (o que chegou desde a última consulta com o mesmo token), `listar_visitas`,
   `ver_visita` (todos os dados, pelo número ou por nome, telefone ou rua), `marcar_portal_oficial` (marca ou desmarca
-  o que já foi migrado), `resumo_visitas`, `estatisticas_site`, `ultimo_roteiro` e `conferir_bairros`. Para o super admin:
+  o que já foi migrado), `possiveis_duplicidades`, `resumo_visitas`, `estatisticas_site`, `ultimo_roteiro` e `conferir_bairros`. Para o super admin:
   `pedidos_de_acesso`, `aprovar_pedido`, `recusar_pedido`, `listar_usuarios` e `auditoria`.
 - **Recursos**: `missao://visitas/recentes`, `missao://visitas/resumo`, `missao://visitas/{id}` e, para o super
   admin, `missao://usuarios/pedidos`.

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { DIAS, PERIODOS } from '@/lib/config';
+import type { Parecida } from '@/lib/duplicidade';
 import { idVisitante, iniciarRastreio, rastrear } from '@/lib/rastreio';
 
 type Sugestao = { rua: string; bairro: string; cidade: string; uf: string; cep: string; detalhe: string; lat: number; lng: number };
@@ -139,6 +140,9 @@ export default function FormularioVisita() {
   const [enviando, setEnviando] = useState(false);
   const [falha, setFalha] = useState('');
   const [enviado, setEnviado] = useState<Campos | null>(null);
+  // Cadastro parecido já existente: o aviso vale só enquanto os dados conferidos não mudarem
+  const [aviso, setAviso] = useState<{ chave: string; parecidas: Parecida[] } | null>(null);
+  const [naoEnviado, setNaoEnviado] = useState(false);
   const [site, setSite] = useState('');
   const carregou = useRef(false);
   const bairroAuto = useRef('');
@@ -343,8 +347,29 @@ export default function FormularioVisita() {
     if (alvo instanceof HTMLInputElement) alvo.focus({ preventScroll: true });
   }
 
-  async function enviar(ev: React.FormEvent) {
-    ev.preventDefault();
+  const chaveDoAviso = JSON.stringify([f.nome, f.telefone, f.rua, f.numero, f.semNumero, f.complemento]);
+  const parecidas = aviso && aviso.chave === chaveDoAviso ? aviso.parecidas : null;
+
+  useEffect(() => {
+    if (aviso) document.getElementById('aviso-duplicidade')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, [aviso]);
+
+  function limparTudo() {
+    try {
+      localStorage.removeItem(RASCUNHO);
+    } catch {}
+    camposVistos.current.clear();
+    inicio.current = null;
+    setF(VAZIO);
+    setLocal(null);
+    setAviso(null);
+    setNaoEnviado(false);
+    window.scrollTo({ top: 0 });
+  }
+
+  // "confirmado": a pessoa viu o aviso de cadastro parecido e disse que é outra família.
+  async function enviar(ev?: React.FormEvent, confirmado = false) {
+    ev?.preventDefault();
     if (enviando) return;
     const e = validar(f);
     setErros(e);
@@ -370,6 +395,8 @@ export default function FormularioVisita() {
           uf: local?.uf ?? '',
           cep: local?.cep ?? '',
           bairroAutomatico: Boolean(f.bairro) && f.bairro === bairroAuto.current,
+          avisarDuplicidade: true,
+          confirmado,
           tela: `${window.innerWidth}x${window.innerHeight}`,
           fuso: Intl.DateTimeFormat().resolvedOptions().timeZone,
           visitante: idVisitante(),
@@ -377,7 +404,7 @@ export default function FormularioVisita() {
           site,
         }),
       });
-      const d = (await r.json().catch(() => ({}))) as { ok?: boolean; erro?: string; erros?: Erros };
+      const d = (await r.json().catch(() => ({}))) as { ok?: boolean; erro?: string; erros?: Erros; duplicidade?: Parecida[] };
       if (r.ok && d.ok) {
         try {
           localStorage.removeItem(RASCUNHO);
@@ -388,7 +415,13 @@ export default function FormularioVisita() {
         setEnviado(f);
         setF(VAZIO);
         setLocal(null);
+        setAviso(null);
         window.scrollTo({ top: 0 });
+        return;
+      }
+      if (r.status === 409 && d.duplicidade?.length) {
+        setAviso({ chave: chaveDoAviso, parecidas: d.duplicidade });
+        rastrear({ tipo: 'tentativa', dados: { erros: ['duplicidade'] } });
         return;
       }
       if (d.erros) {
@@ -411,6 +444,25 @@ export default function FormularioVisita() {
     const proximo = campos[campos.indexOf(ev.target) + 1];
     if (proximo) proximo.focus();
     else ev.target.blur();
+  }
+
+  if (naoEnviado) {
+    return (
+      <section className="cartao text-center" role="status" aria-live="polite">
+        <h2 className="text-3xl font-extrabold text-stone-900">Nada foi enviado</h2>
+        <p className="mt-2 text-lg text-stone-700">Esta família já estava cadastrada. Não é preciso fazer mais nada.</p>
+        <button type="button" data-mapa="outra-familia" onClick={limparTudo} className="mt-6 w-full rounded-2xl bg-emerald-700 px-6 py-5 text-xl font-extrabold text-white shadow-md active:bg-emerald-800">
+          Cadastrar outra família
+        </button>
+        <button
+          type="button"
+          onClick={() => setNaoEnviado(false)}
+          className="mt-3 w-full rounded-2xl border-2 border-stone-400 bg-white px-6 py-4 text-xl font-bold text-stone-900 active:bg-stone-100"
+        >
+          Voltar ao cadastro
+        </button>
+      </section>
+    );
   }
 
   if (enviado) {
@@ -777,14 +829,58 @@ export default function FormularioVisita() {
         </p>
       )}
 
-      <button
-        type="submit"
-        data-mapa="enviar"
-        disabled={enviando}
-        className="w-full rounded-2xl bg-emerald-700 px-6 py-5 text-2xl font-extrabold text-white shadow-lg active:bg-emerald-800 disabled:opacity-70"
-      >
-        {enviando ? 'Enviando…' : 'Enviar cadastro'}
-      </button>
+      {parecidas ? (
+        <section id="aviso-duplicidade" role="alert" data-mapa="duplicidade" className="scroll-mt-6 rounded-2xl border-2 border-amber-400 bg-amber-50 p-4">
+          <h2 className="text-2xl font-extrabold text-stone-900">Parece que esta família já foi cadastrada</h2>
+          <p className="mt-1 text-lg text-stone-800">
+            {parecidas.length === 1 ? 'Já existe um cadastro parecido com este.' : 'Já existem cadastros parecidos com este.'} Confira antes de enviar:
+          </p>
+          <ul className="mt-3 space-y-2">
+            {parecidas.map((p) => (
+              <li key={p.id} className="rounded-xl bg-white p-3 text-lg text-stone-900">
+                <p className="font-bold">
+                  Cadastro nº {p.id}
+                  {p.nome ? ` · ${p.nome}` : ''}
+                </p>
+                {p.endereco && <p>{p.endereco}</p>}
+                <p>Visita: {p.visita}</p>
+                <p className="text-base font-semibold text-amber-900">Igual ou parecido: {p.motivos.join(', ')}</p>
+              </li>
+            ))}
+          </ul>
+          <div className="mt-4 space-y-3">
+            <button
+              type="button"
+              data-mapa="duplicidade-nao-enviar"
+              onClick={() => {
+                setNaoEnviado(true);
+                window.scrollTo({ top: 0 });
+              }}
+              className="w-full rounded-2xl bg-emerald-700 px-6 py-5 text-xl font-extrabold text-white shadow-md active:bg-emerald-800"
+            >
+              É a mesma família: não enviar
+            </button>
+            <button
+              type="button"
+              data-mapa="duplicidade-enviar"
+              disabled={enviando}
+              onClick={() => enviar(undefined, true)}
+              className="w-full rounded-2xl border-2 border-stone-400 bg-white px-6 py-4 text-xl font-bold text-stone-900 active:bg-stone-100 disabled:opacity-70"
+            >
+              {enviando ? 'Enviando…' : 'É outra família: enviar mesmo assim'}
+            </button>
+          </div>
+        </section>
+      ) : (
+        <button
+          type="submit"
+          data-mapa="enviar"
+          disabled={enviando}
+          className="w-full rounded-2xl bg-emerald-700 px-6 py-5 text-2xl font-extrabold text-white shadow-lg active:bg-emerald-800 disabled:opacity-70"
+        >
+          {enviando ? 'Enviando…' : 'Enviar cadastro'}
+        </button>
+      )}
       <p className="text-center text-base text-stone-500">Os dados são usados somente para organizar as visitas.</p>
     </form>
   );

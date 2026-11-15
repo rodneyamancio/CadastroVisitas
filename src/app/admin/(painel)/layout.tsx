@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { exigirUsuario } from '@/lib/auth';
 import { sql } from '@/lib/db';
+import { totalDeDuplicidades } from '@/lib/duplicidade';
 import { sair } from '../acoes';
 
 export const dynamic = 'force-dynamic';
@@ -9,15 +10,17 @@ export const metadata = { title: 'Painel de visitas' };
 export default async function PainelLayout({ children }: { children: React.ReactNode }) {
   const usuario = await exigirUsuario();
   const pedidos = usuario.perfil === 'super_admin' ? (await sql<{ n: number }>('SELECT count(*)::int AS n FROM usuarios WHERE aguardando_aprovacao'))[0].n : 0;
-  const links = [
+  const duplicidades = await totalDeDuplicidades();
+  const links: { href: string; nome: string; aviso?: number; sobre?: string }[] = [
     { href: '/admin', nome: 'Visitas' },
+    { href: '/admin/duplicidades', nome: 'Duplicidades', aviso: duplicidades, sobre: 'Possíveis duplicidades para conferir' },
     { href: '/admin/mapa', nome: 'Mapa de calor' },
     { href: '/admin/site', nome: 'Site' },
     { href: '/admin/assistente', nome: 'Assistente de IA' },
     { href: '/admin/mcp', nome: 'MCP' },
     ...(usuario.perfil === 'super_admin'
       ? [
-          { href: '/admin/usuarios', nome: 'Usuários', aviso: pedidos },
+          { href: '/admin/usuarios', nome: 'Usuários', aviso: pedidos, sobre: 'Pedidos de acesso aguardando aprovação' },
           { href: '/admin/auditoria', nome: 'Auditoria' },
           { href: '/admin/configuracoes', nome: 'Configurações' },
         ]
@@ -32,8 +35,8 @@ export default async function PainelLayout({ children }: { children: React.React
             {links.map((l) => (
               <Link key={l.href} href={l.href} className="rounded-lg px-3 py-2 text-sm font-semibold text-stone-700 hover:bg-stone-100">
                 {l.nome}
-                {'aviso' in l && (l.aviso ?? 0) > 0 && (
-                  <span className="ml-1.5 rounded-full bg-amber-500 px-1.5 py-0.5 text-xs font-bold text-white" title="Pedidos de acesso aguardando aprovação">
+                {(l.aviso ?? 0) > 0 && (
+                  <span className="ml-1.5 rounded-full bg-amber-500 px-1.5 py-0.5 text-xs font-bold text-white" title={l.sobre}>
                     {l.aviso}
                   </span>
                 )}

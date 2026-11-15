@@ -8,6 +8,7 @@ import { criarSessao, encerrarSessao, exigirSuperAdmin, exigirUsuario, ipDoClien
 import { nomeDia, nomePeriodo } from '@/lib/config';
 import { MODELOS_ANTHROPIC, configuracaoIA, gravar, gravarChaveApi, iaPronta, type Provedor } from '@/lib/configuracoes';
 import { sql } from '@/lib/db';
+import { reconferirDuplicidades, resolverDuplicidade } from '@/lib/duplicidade';
 import { ErroEmail, emailPronto, emails, enviarEmail } from '@/lib/email';
 import { ErroIA, testarConexao } from '@/lib/ia';
 import { dentroDoLimite } from '@/lib/limite';
@@ -118,6 +119,33 @@ export async function conferirBairros(): Promise<RetornoBairros> {
     console.error('Falha ao conferir bairros', e);
     return { erro: 'Não foi possível conferir os bairros agora. Tente de novo em instantes.' };
   }
+}
+
+// ---------- Duplicidades ----------
+
+export type RetornoDuplicidades = { erro?: string; conferidas?: number; apontadas?: number; comIa?: boolean } | undefined;
+
+// Verifica de novo todos os cadastros (regras e, se houver, a IA conectada).
+export async function verificarDuplicidades(): Promise<RetornoDuplicidades> {
+  const eu = await exigirUsuario();
+  if (!dentroDoLimite(`duplicidades:${eu.id}`, 4, 10 * 60_000)) return { erro: 'Você já mandou verificar várias vezes agora há pouco. Aguarde alguns minutos.' };
+  try {
+    const r = await reconferirDuplicidades();
+    await registrar('visita.duplicidades', eu, null, { conferidas: r.conferidas, 'possíveis duplicidades': r.apontadas, análise: r.comIa ? 'regras e IA' : 'só regras' });
+    revalidatePath('/admin', 'layout');
+    return r;
+  } catch (e) {
+    console.error('Falha ao verificar duplicidades', e);
+    return { erro: 'Não foi possível verificar agora. Tente de novo em instantes.' };
+  }
+}
+
+// "Não é repetido": tira o par da lista (ou devolve, ao reabrir).
+export async function resolverPar(id: number, descartar: boolean): Promise<void> {
+  const eu = await exigirUsuario();
+  const d = await resolverDuplicidade(id, descartar, eu.nome);
+  if (d) await registrar(descartar ? 'visita.duplicidade.descartada' : 'visita.duplicidade.reaberta', eu, `Nº ${d.visita_id} e Nº ${d.outra_id}`);
+  revalidatePath('/admin', 'layout');
 }
 
 // ---------- Usuários (só super admin) ----------

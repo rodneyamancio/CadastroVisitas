@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import BotaoExcluir from './BotaoExcluir';
 import CaixaPortal from './CaixaPortal';
@@ -24,6 +25,8 @@ export type LinhaVisita = {
   migrado: boolean;
   detalhePortal?: string;
   linkMapa: string;
+  // Outros cadastros que podem ser da mesma família
+  duplicidades: { par: number; texto: string }[];
   ip?: string;
   aparelho?: string;
 };
@@ -68,6 +71,7 @@ const GRUPOS: { id: string; nome: string; soSuperAdmin?: boolean; chave: (l: Lin
   { id: 'periodo', nome: 'Horário', chave: (l) => l.periodo, rotulo: (l) => l.periodoNome },
   { id: 'diaPeriodo', nome: 'Dia e horário', chave: (l) => `${l.dataVisita}|${l.periodo}`, rotulo: (l) => `${l.dia} · ${l.periodoNome}` },
   { id: 'confirmar', nome: 'Confirmar antes', chave: (l) => String(ordemConfirmar(l)), rotulo: (l) => `Confirmar antes: ${textoConfirmar(l)}` },
+  { id: 'duplicidade', nome: 'Possível duplicidade', chave: (l) => (l.duplicidades.length ? '0' : '1'), rotulo: (l) => (l.duplicidades.length ? 'Com possível duplicidade' : 'Sem duplicidade apontada') },
   { id: 'criado', nome: 'Data do cadastro', chave: (l) => l.criadoDia, rotulo: (l) => `Cadastradas em ${dataCurta(l.criadoDia)}` },
   { id: 'ip', nome: 'IP de quem cadastrou', soSuperAdmin: true, chave: (l) => (l.ip ? `0${l.ip}` : '1'), rotulo: (l) => (l.ip ? `${l.ip}${l.aparelho ? ` · ${l.aparelho}` : ''}` : 'Sem IP') },
 ];
@@ -204,7 +208,14 @@ export default function TabelaVisitas({ linhas, superAdmin }: { linhas: LinhaVis
       <td className="px-2 py-2">
         <CaixaPortal id={l.id} nome={l.responsavel} migrado={l.migrado} detalhe={l.detalhePortal} />
       </td>
-      <td className="min-w-32 px-2 py-2.5 font-semibold text-stone-900">{l.responsavel}</td>
+      <td className="min-w-32 px-2 py-2.5 font-semibold text-stone-900">
+        {l.responsavel}
+        {l.duplicidades.map((d) => (
+          <Link key={d.par} href={`/admin/duplicidades#par-${d.par}`} className="mt-0.5 block text-xs font-semibold text-amber-800 underline">
+            Possível duplicidade: {d.texto}
+          </Link>
+        ))}
+      </td>
       <td className="px-2 py-2.5 whitespace-nowrap">
         <a href={`https://wa.me/55${l.telefone}`} target="_blank" rel="noopener noreferrer" className="text-emerald-800 underline">
           {l.telefoneTexto}
