@@ -31,6 +31,8 @@ docker compose -f docker-compose.yml -f docker-compose.dev.yml up
   preciso entrar em contato antes para confirmar a visita (sim ou não).
 - **Visitas** (`/admin`): lista em cards ou tabela, busca e filtros, totais por dia/horário, exclusão e
   **exportação para Excel** (respeita os filtros).
+  Na tabela dá para ordenar pelo título de cada coluna, filtrar coluna por coluna e agrupar (bairro, dia, horário,
+  portal oficial etc.), abrindo e fechando cada grupo.
   O botão **Conferir bairros** olha de novo o bairro de todas as visitas pelo nome da rua e corrige os errados.
   A coluna **Portal oficial** marca o que já foi passado para o portal oficial (este sistema é paralelo a ele):
   mostra quem marcou e quando, tem filtro "Falta migrar" e contador do que falta, e sai na planilha.

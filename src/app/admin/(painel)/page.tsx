@@ -7,6 +7,7 @@ import BotaoBairros from './BotaoBairros';
 import BotaoExcluir from './BotaoExcluir';
 import CaixaPortal from './CaixaPortal';
 import SeletorVisao, { type Visao } from './SeletorVisao';
+import TabelaVisitas, { type LinhaVisita } from './TabelaVisitas';
 
 function telefoneFormatado(t: string) {
   if (t.length === 11) return `(${t.slice(0, 2)}) ${t.slice(2, 7)}-${t.slice(7)}`;
@@ -21,6 +22,7 @@ function linkMapa(v: Visita) {
 
 const quando = new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short', timeZone: 'America/Sao_Paulo' });
 
+const diaIso = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' });
 const diaHora = new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' });
 
 // "13/11, 14:02 · Rodney": quando e quem marcou o cadastro como migrado para o portal oficial
@@ -69,6 +71,31 @@ export default async function Painel({ searchParams }: { searchParams: Promise<R
   const consulta = filtrosParaUrl(filtros);
   const filtrando = Boolean(consulta);
   const faltam = resumo.total - resumo.migradas;
+  // Linhas da tabela: o IP e o aparelho só vão para o navegador do super admin.
+  const linhas: LinhaVisita[] =
+    visao !== 'tabela'
+      ? []
+      : visitas.map((v) => ({
+          id: v.id,
+          responsavel: v.responsavel,
+          telefone: v.telefone,
+          telefoneTexto: telefoneFormatado(v.telefone),
+          endereco: [`${v.endereco}, ${v.numero}`, v.complemento].filter(Boolean).join(' - '),
+          observacoes: v.observacoes ?? '',
+          bairro: v.bairro ?? '',
+          dataVisita: v.data_visita,
+          dia: nomeDia(v.data_visita),
+          periodo: v.periodo,
+          periodoNome: nomePeriodo(v.periodo),
+          confirmar: v.confirmar_contato,
+          criadoEm: v.criado_em.getTime(),
+          criadoTexto: quando.format(v.criado_em),
+          criadoDia: diaIso.format(v.criado_em),
+          migrado: v.migrado_em != null,
+          detalhePortal: detalheDoPortal(v),
+          linkMapa: linkMapa(v),
+          ...(superAdmin ? { ip: v.ip ?? '', aparelho: v.extra?.aparelho ?? '' } : {}),
+        }));
 
   return (
     <div className="space-y-6">
@@ -247,70 +274,7 @@ export default async function Painel({ searchParams }: { searchParams: Promise<R
             ))}
           </ul>
         ) : (
-          <div className="relative overflow-x-auto rounded-xl border border-stone-200 bg-white">
-            <table className="w-full min-w-[70rem] border-collapse text-left text-sm">
-              <thead className="bg-stone-50 text-xs text-stone-600 uppercase">
-                <tr>
-                  <th className="px-3 py-2.5 font-semibold">Portal oficial</th>
-                  <th className="px-3 py-2.5 font-semibold">Responsável</th>
-                  <th className="px-3 py-2.5 font-semibold">Telefone</th>
-                  <th className="px-3 py-2.5 font-semibold">Endereço</th>
-                  <th className="px-3 py-2.5 font-semibold">Bairro</th>
-                  <th className="px-3 py-2.5 font-semibold">Dia</th>
-                  <th className="px-3 py-2.5 font-semibold">Horário</th>
-                  <th className="px-3 py-2.5 font-semibold">Confirmar antes</th>
-                  <th className="px-3 py-2.5 font-semibold">Cadastrado em</th>
-                  {superAdmin && <th className="px-3 py-2.5 font-semibold">IP / aparelho</th>}
-                  <th className="px-3 py-2.5 font-semibold">
-                    <span className="sr-only">Ações</span>
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-stone-100">
-                {visitas.map((v) => (
-                  <tr key={v.id} className="align-top hover:bg-stone-50">
-                    <td className="px-3 py-2">
-                      <CaixaPortal id={v.id} nome={v.responsavel} migrado={v.migrado_em != null} detalhe={detalheDoPortal(v)} />
-                    </td>
-                    <td className="min-w-32 px-3 py-2.5 font-semibold text-stone-900">{v.responsavel}</td>
-                    <td className="px-3 py-2.5 whitespace-nowrap">
-                      <a href={`https://wa.me/55${v.telefone}`} target="_blank" rel="noopener noreferrer" className="text-emerald-800 underline">
-                        {telefoneFormatado(v.telefone)}
-                      </a>
-                    </td>
-                    <td className="min-w-48 px-3 py-2.5">
-                      <a href={linkMapa(v)} target="_blank" rel="noopener noreferrer" className="text-emerald-800 underline">
-                        {[`${v.endereco}, ${v.numero}`, v.complemento].filter(Boolean).join(' - ')}
-                      </a>
-                      {v.observacoes && <div className="text-xs text-stone-500">{v.observacoes}</div>}
-                    </td>
-                    <td className="px-3 py-2.5">{v.bairro ?? ''}</td>
-                    <td className="px-3 py-2.5 whitespace-nowrap">{nomeDia(v.data_visita)}</td>
-                    <td className="px-3 py-2.5">{nomePeriodo(v.periodo)}</td>
-                    <td className="px-3 py-2.5">
-                      {v.confirmar_contato == null ? (
-                        <span className="text-stone-400">não informado</span>
-                      ) : v.confirmar_contato ? (
-                        <span className="font-semibold text-amber-800">Sim</span>
-                      ) : (
-                        'Não'
-                      )}
-                    </td>
-                    <td className="px-3 py-2.5 whitespace-nowrap text-stone-600">{quando.format(v.criado_em)}</td>
-                    {superAdmin && (
-                      <td className="px-3 py-2.5 text-xs text-stone-600">
-                        <div className="font-mono">{v.ip ?? 'sem IP'}</div>
-                        <div>{v.extra?.aparelho ?? ''}</div>
-                      </td>
-                    )}
-                    <td className="px-3 py-2.5 text-right">
-                      <BotaoExcluir id={v.id} nome={v.responsavel} />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <TabelaVisitas linhas={linhas} superAdmin={superAdmin} />
         )}
       </section>
     </div>
