@@ -3,8 +3,9 @@ import { SubscribeRequestSchema, UnsubscribeRequestSchema } from '@modelcontextp
 import { z } from 'zod';
 import { ACOES, CATEGORIAS, listarAuditoria, registrar } from '../auditoria';
 import { DIAS, PERIODOS, PRECISOES, TITULO, nomeDia, nomePeriodo } from '../config';
+import { gravarVisita, processarNovaVisita, validarNovaVisita } from '../criacao';
 import { sql } from '../db';
-import { listarDuplicidades } from '../duplicidade';
+import { listarDuplicidades, parecidasCom } from '../duplicidade';
 import { editarVisita, type Edicao } from '../edicao';
 import { PERIODOS_SITE, estatisticasDoSite } from '../estatisticas';
 import { aprovarPedidoDeAcesso, pedidosPendentes, recusarPedidoDeAcesso } from '../pedidos';
@@ -20,7 +21,7 @@ import type { DonoDoToken } from './tokens';
 const INSTRUCOES = `Servidor do "${TITULO}": cadastro de famílias que pediram visita nos dias 28/11/2026 (sábado) e 29/11/2026 (domingo), de manhã ou à tarde.
 
 - Para saber o que chegou de novo, use "novidades": ela devolve só os cadastros recebidos desde a última consulta feita com este token.
-- Este sistema é paralelo ao portal oficial: cada visita informa em "portal_oficial" se já foi passada para lá. Para conferir os dados antes de passar, use "ver_visita"; depois de cadastrar no portal oficial, marque com "marcar_portal_oficial". Para corrigir dados de um cadastro, use "editar_visita". "listar_visitas" com portal_oficial "falta" mostra o que ainda falta.
+- Este sistema é paralelo ao portal oficial: cada visita informa em "portal_oficial" se já foi passada para lá. Para conferir os dados antes de passar, use "ver_visita"; depois de cadastrar no portal oficial, marque com "marcar_portal_oficial". Para cadastrar uma família nova, use "criar_visita"; para corrigir dados de um cadastro, use "editar_visita". "listar_visitas" com portal_oficial "falta" mostra o que ainda falta.
 - "listar_visitas", "ver_visita" e "resumo_visitas" consultam as famílias cadastradas; "estatisticas_site" mostra quantas pessoas entraram no formulário e quantas concluíram.
 - Os dados são pessoais (nome, telefone, endereço): use só para organizar as visitas.
 - Datas e horas estão no horário de Brasília.`;
@@ -466,6 +467,93 @@ export function criarServidor(dono: DonoDoToken, assinaturas: Set<string>): McpS
       return texto(
         { alteracoes: r.mudancas, visita: visitaParaMcp(r.visita, superAdmin) },
         r.mudancas.length ? `${r.mudancas.length} ${r.mudancas.length === 1 ? 'campo alterado' : 'campos alterados'} no cadastro nº ${r.visita.id}.` : 'Nada mudou: os dados já estavam assim.',
+      );
+    },
+  );
+
+  servidor.registerTool(
+    'criar_visita',
+    {
+      title: 'Cadastrar uma família nova',
+      description:
+        'Cadastra uma família que pediu visita, com as mesmas regras do formulário público. Obrigatórios: responsável (nome completo), telefone com DDD, rua, número (ou S/N), dia, período e se é preciso entrar em contato antes para confirmar. Antes de gravar, o sistema procura cadastro parecido (nome, telefone ou endereço): se achar, NÃO grava e devolve os cadastros parecidos. Confira com quem pediu se é a mesma família; se for outra, chame de novo com "mesmo_assim": true. Depois de gravar, o bairro é conferido pelos Correios (o informado aqui é respeitado), a casa é localizada no mapa e a duplicidade é conferida de novo com a IA. Fica na auditoria quem cadastrou.',
+      inputSchema: {
+        responsavel: z.string().max(120).describe('Nome completo do responsável pela casa'),
+        telefone: z.string().max(20).describe('Com DDD. Exemplo: (11) 91234-5678'),
+        rua: z.string().max(160).describe('Rua ou avenida'),
+        numero: z.string().max(12).describe('Número da casa, ou S/N'),
+        complemento: z.string().max(120).optional(),
+        bairro: z.string().max(80).optional().describe('Se não informar, o sistema descobre pela rua'),
+        cep: z.string().max(10).optional(),
+        como_achar_a_casa: z.string().max(500).optional().describe('Ponto de referência, cor do portão etc.'),
+        dia: z.enum(['sabado', 'domingo']).describe('sabado = 28/11/2026, domingo = 29/11/2026'),
+        periodo: z.enum(['manha', 'tarde']),
+        entrar_em_contato_antes: z.enum(['sim', 'nao', 'nao_informado']).describe('Se é preciso entrar em contato com a família antes para confirmar a visita'),
+        mesmo_assim: z.boolean().optional().describe('true para gravar mesmo havendo cadastro parecido, depois de confirmar que é outra família'),
+      },
+      annotations: { title: 'Cadastrar uma família nova', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+    },
+    async (a) => {
+      const { dados, erros } = validarNovaVisita({
+        nome: a.responsavel,
+        telefone: a.telefone,
+        rua: a.rua,
+        numero: a.numero,
+        complemento: a.complemento,
+        bairro: a.bairro,
+        cep: a.cep,
+        obs: a.como_achar_a_casa,
+        dia: DIAS[a.dia === 'sabado' ? 0 : 1].valor,
+        periodo: a.periodo,
+        confirmar: a.entrar_em_contato_antes === 'nao_informado' ? null : a.entrar_em_contato_antes === 'sim',
+      });
+      if (Object.keys(erros).length) return falha(`Confira os dados: ${Object.values(erros).join(' ')}`);
+      const origem = `MCP (token ${dono.nomeDoToken})`;
+
+      // Cadastro parecido: não grava sem a confirmação de que é outra família
+      const parecidas = await parecidasCom(dados).catch((e) => {
+        console.error('Falha ao procurar cadastro parecido', e);
+        return [];
+      });
+      if (parecidas.length && !a.mesmo_assim) {
+        const completas = await sql<Visita>('SELECT * FROM visitas WHERE id = ANY($1::int[])', [parecidas.map((p) => p.id)]);
+        const porId = new Map(completas.map((v) => [v.id, v]));
+        await registrar('visita.duplicidade.aviso', dono, dados.responsavel, {
+          origem,
+          endereço: `${dados.endereco}, ${dados.numero}`,
+          'parecido com': parecidas.map((p) => `Nº ${p.id} (${p.motivos.join(', ')})`).join(' · '),
+        });
+        return texto(
+          {
+            gravado: false,
+            cadastros_parecidos: parecidas.flatMap((p) => {
+              const v = porId.get(p.id);
+              return v ? [{ o_que_e_parecido: p.motivos, cadastro: visitaParaMcp(v, superAdmin) }] : [];
+            }),
+          },
+          `Nada foi gravado: ${parecidas.length === 1 ? 'há 1 cadastro parecido' : `há ${parecidas.length} cadastros parecidos`}. Confira se é a mesma família. Se for outra família, chame "criar_visita" de novo com os mesmos dados e "mesmo_assim": true.`,
+        );
+      }
+
+      const nova = await gravarVisita(dados, {
+        lat: null,
+        lng: null,
+        precisao: null,
+        ip: null,
+        agente: null,
+        extra: { aparelho: `Cadastrado pelo MCP por ${dono.nome} (token ${dono.nomeDoToken})` },
+      });
+      await registrar('visita.criada.mcp', dono, `Nº ${nova.id} · ${nova.responsavel}`, {
+        origem,
+        endereço: `${nova.endereco}, ${nova.numero}`,
+        visita: `${nomeDia(nova.data_visita)} · ${nomePeriodo(nova.periodo)}`,
+        'confirmar antes': nova.confirmar_contato == null ? 'não informado' : nova.confirmar_contato ? 'sim' : 'não',
+        ...(parecidas.length ? { 'aviso de duplicidade': `confirmou que é outra família (parecido com ${parecidas.map((p) => `Nº ${p.id}`).join(', ')})` } : {}),
+      });
+      void processarNovaVisita(nova.id, false, null);
+      return texto(
+        { gravado: true, visita: visitaParaMcp(nova, superAdmin) },
+        `Cadastro nº ${nova.id} criado: ${nova.responsavel}, ${nomeDia(nova.data_visita)} · ${nomePeriodo(nova.periodo)}. O bairro, a posição no mapa e a duplicidade são conferidos em seguida; veja com "ver_visita" daqui a alguns segundos.`,
       );
     },
   );

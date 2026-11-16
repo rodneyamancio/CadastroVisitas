@@ -1,16 +1,12 @@
 import { NextResponse, after } from 'next/server';
 import { registrar } from '@/lib/auditoria';
 import { ipDoCliente } from '@/lib/auth';
-import { CIDADE_PADRAO, DIAS, PERIODOS, UF_PADRAO, nomeDia, nomePeriodo } from '@/lib/config';
-import { sql } from '@/lib/db';
+import { nomeDia, nomePeriodo } from '@/lib/config';
+import { gravarVisita, processarNovaVisita, texto, validarNovaVisita } from '@/lib/criacao';
 import { resumoDoAparelho } from '@/lib/dispositivo';
-import { conferirDuplicidade, parecidasCom } from '@/lib/duplicidade';
+import { parecidasCom } from '@/lib/duplicidade';
 import { dentroDaRegiao } from '@/lib/geocode';
 import { dentroDoLimite } from '@/lib/limite';
-import { avisarNovaVisita } from '@/lib/mcp/sessoes';
-import { conferirBairro, localizarVisita } from '@/lib/visitas';
-
-const texto = (v: unknown, max: number) => (typeof v === 'string' ? v.trim().replace(/\s+/g, ' ').slice(0, max) : '');
 
 export async function POST(req: Request) {
   const c = (await req.json().catch(() => null)) as Record<string, unknown> | null;
@@ -24,28 +20,15 @@ export async function POST(req: Request) {
     return NextResponse.json({ erro: 'Muitos cadastros em pouco tempo. Aguarde alguns minutos e tente de novo.' }, { status: 429 });
   }
 
-  const nome = texto(c.nome, 120);
-  const telefone = texto(c.telefone, 20).replace(/\D/g, '');
-  const rua = texto(c.rua, 160);
-  const numero = texto(c.numero, 12);
-  const dia = texto(c.dia, 10);
-  const periodo = texto(c.periodo, 10);
   // Quem está com o formulário antigo aberto não manda a resposta: fica sem informação, sem travar o envio.
   const confirmarContato = c.contato === 'sim' ? true : c.contato === 'nao' ? false : null;
-
-  const erros: Record<string, string> = {};
-  if (nome.length < 3) erros.nome = 'Escreva o nome completo do responsável pela casa.';
-  if (telefone.length < 10 || telefone.length > 11) erros.telefone = 'Escreva o telefone com DDD. Exemplo: (11) 91234-5678.';
-  if (rua.length < 3) erros.rua = 'Escreva o nome da rua ou avenida.';
-  if (!numero) erros.numero = 'Escreva o número da casa.';
-  if (!DIAS.some((d) => d.valor === dia)) erros.dia = 'Escolha o dia da visita.';
-  if (!PERIODOS.some((p) => p.valor === periodo)) erros.periodo = 'Escolha o horário da visita.';
+  const { dados, erros } = validarNovaVisita({ ...c, confirmar: confirmarContato });
   if (Object.keys(erros).length) return NextResponse.json({ erro: 'Confira os campos destacados.', erros }, { status: 422 });
+  const { responsavel: nome, telefone, endereco: rua, numero, complemento, data_visita: dia, periodo } = dados;
 
   // Antes de gravar: se já existe cadastro parecido, pergunta a quem está cadastrando se é a mesma família.
   // Só para o formulário novo (que sabe mostrar o aviso). "ignorar" traz os cadastros que a pessoa já disse
   // serem de outra família; com "confirmado" (formulário da versão anterior), grava sem conferir.
-  const complemento = texto(c.complemento, 120) || null;
   const ignorar = new Set(Array.isArray(c.ignorar) ? c.ignorar.filter((n): n is number => Number.isInteger(n)) : []);
   let confirmado = c.confirmado === true;
   if (c.avisarDuplicidade === true && !confirmado) {
@@ -89,32 +72,7 @@ export async function POST(req: Request) {
     usouGps: c.fonte === 'gps',
   };
 
-  const [nova] = await sql<{ id: number }>(
-    `INSERT INTO visitas (responsavel, telefone, endereco, numero, complemento, bairro, cidade, uf, cep, observacoes,
-                          data_visita, periodo, lat, lng, precisao, ip, agente, extra, confirmar_contato)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19) RETURNING id`,
-    [
-      nome,
-      telefone,
-      rua,
-      numero,
-      complemento,
-      texto(c.bairro, 80) || null,
-      texto(c.cidade, 80) || CIDADE_PADRAO,
-      texto(c.uf, 30) || UF_PADRAO,
-      texto(c.cep, 10) || null,
-      texto(c.obs, 500) || null,
-      dia,
-      periodo,
-      lat,
-      lng,
-      precisao,
-      ip,
-      agente || null,
-      JSON.stringify(extra),
-      confirmarContato,
-    ],
-  );
+  const nova = await gravarVisita(dados, { lat, lng, precisao, ip, agente: agente || null, extra });
 
   await registrar('visita.criada', { nome: 'Formulário público' }, `Nº ${nova.id} · ${nome}`, {
     endereço: `${rua}, ${numero}`,
@@ -124,16 +82,9 @@ export async function POST(req: Request) {
     aparelho: extra.aparelho,
   });
 
-  // Depois de responder: confere o bairro pela rua e pelo número (Correios) e acha a casa no mapa.
+  // Depois de responder: bairro pelos Correios, aviso no MCP, mapa e duplicidade.
   // O bairro escrito à mão por quem cadastrou é respeitado; o preenchido sozinho pode ser trocado.
   const bairroAutomatico = c.bairroAutomatico === true;
-  after(async () => {
-    await conferirBairro(nova.id, bairroAutomatico).catch((e) => console.error('Falha ao conferir bairro', nova.id, e));
-    // Avisa quem está conectado pelo MCP (já com o bairro conferido)
-    await avisarNovaVisita(nova.id).catch((e) => console.error('Falha ao avisar pelo MCP', nova.id, e));
-    if (precisao !== 'gps') await localizarVisita(nova.id).catch((e) => console.error('Falha ao localizar endereço', nova.id, e));
-    // Por último (a IA pode demorar): procura cadastro repetido por nome, telefone e endereço
-    await conferirDuplicidade(nova.id).catch((e) => console.error('Falha ao conferir duplicidade', nova.id, e));
-  });
+  after(() => processarNovaVisita(nova.id, bairroAutomatico, precisao));
   return NextResponse.json({ ok: true, id: nova.id });
 }
