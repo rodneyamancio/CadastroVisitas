@@ -55,8 +55,8 @@ export default async function EditarVisita({ params }: { params: Promise<{ id: s
       )}
 
       <FormularioEdicao
+        id={v.id}
         v={{
-          id: v.id,
           responsavel: v.responsavel,
           telefone: v.telefone,
           endereco: v.endereco,

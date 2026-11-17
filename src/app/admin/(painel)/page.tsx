@@ -231,7 +231,13 @@ export default async function Painel({ searchParams }: { searchParams: Promise<R
               </svg>
               Assistente de IA
             </Link>
-            <a href={`/api/admin/exportar${consulta ? `?${consulta}` : ''}`} className="adm-botao" download>
+            <Link href="/admin/visitas/nova" className="adm-botao">
+              <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M12 5v14M5 12h14" />
+              </svg>
+              Nova visita
+            </Link>
+            <a href={`/api/admin/exportar${consulta ? `?${consulta}` : ''}`} className="adm-botao-sec py-2.5" download>
               <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 <path d="M12 4v11m0 0-4-4m4 4 4-4M5 20h14" />
               </svg>

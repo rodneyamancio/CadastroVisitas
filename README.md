@@ -43,6 +43,9 @@ docker compose -f docker-compose.yml -f docker-compose.dev.yml up
   de novo. O formulário público também avisa quem está cadastrando, enquanto preenche (logo abaixo do nome, do
   telefone ou do endereço), quando já existe um cadastro parecido (só pelas regras) e pergunta se é a mesma família. O aviso mostra só o que a pessoa já digitou de forma parecida:
   telefone igual não revela o nome nem o endereço do outro cadastro.
+- **Nova visita** (`/admin/visitas/nova`, botão no topo da lista de visitas): cadastro feito pela equipe, para pedidos
+  recebidos por telefone, no papel ou pessoalmente. Mesmas regras do formulário público; antes de gravar mostra os
+  cadastros parecidos (com todos os dados) e só grava com "É outra família: cadastrar mesmo assim". Fica na auditoria.
 - **Editar visita** (`/admin/visitas/{id}`, botão Editar nos cards, na tabela e em Duplicidades): altera nome,
   telefone, endereço, dia, horário e os demais dados. A auditoria guarda o valor de antes e o de depois; se o endereço
   mudar, o bairro (Correios), a posição no mapa e a duplicidade são conferidos de novo.

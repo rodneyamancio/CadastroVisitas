@@ -6,9 +6,11 @@ import { redirect } from 'next/navigation';
 import { registrar } from '@/lib/auditoria';
 import { criarSessao, encerrarSessao, exigirSuperAdmin, exigirUsuario, ipDoCliente, urlBase, usuarioAtual } from '@/lib/auth';
 import { nomeDia, nomePeriodo } from '@/lib/config';
+import type { DadosDaVisita } from './(painel)/visitas/CamposDaVisita';
 import { MODELOS_ANTHROPIC, configuracaoIA, gravar, gravarChaveApi, iaPronta, type Provedor } from '@/lib/configuracoes';
 import { sql } from '@/lib/db';
-import { reconferirDuplicidades, resolverDuplicidade } from '@/lib/duplicidade';
+import { gravarVisita, processarNovaVisita, validarNovaVisita } from '@/lib/criacao';
+import { parecidasCom, reconferirDuplicidades, resolverDuplicidade } from '@/lib/duplicidade';
 import { editarVisita, type Mudanca } from '@/lib/edicao';
 import { ErroEmail, emailPronto, emails, enviarEmail } from '@/lib/email';
 import { ErroIA, testarConexao } from '@/lib/ia';
@@ -75,34 +77,124 @@ export async function excluirVisita(id: number): Promise<void> {
   revalidatePath('/admin', 'layout');
 }
 
-export type RetornoEdicao = { erro?: string; erros?: Record<string, string>; ok?: string; mudancas?: Mudanca[] } | undefined;
+// O que foi digitado volta para o formulário quando algo dá errado (o React limpa os campos depois de enviar).
+function valoresDaVisita(fd: FormData): DadosDaVisita {
+  const confirmar = campo(fd, 'confirmar');
+  return {
+    responsavel: campo(fd, 'responsavel'),
+    telefone: campo(fd, 'telefone'),
+    endereco: campo(fd, 'endereco'),
+    numero: campo(fd, 'numero'),
+    complemento: campo(fd, 'complemento'),
+    bairro: campo(fd, 'bairro'),
+    cep: campo(fd, 'cep'),
+    observacoes: campo(fd, 'observacoes'),
+    data_visita: campo(fd, 'data_visita'),
+    periodo: campo(fd, 'periodo'),
+    confirmar: confirmar === 'sim' || confirmar === 'nao' || confirmar === 'ni' ? confirmar : '',
+  };
+}
+
+export type RetornoEdicao = { erro?: string; erros?: Record<string, string>; ok?: string; mudancas?: Mudanca[]; valores?: DadosDaVisita } | undefined;
 
 // Alteração dos dados de uma visita pelo painel.
 export async function salvarVisita(id: number, _anterior: RetornoEdicao, fd: FormData): Promise<RetornoEdicao> {
   const eu = await exigirUsuario();
-  const confirmar = campo(fd, 'confirmar');
+  const valores = valoresDaVisita(fd);
   const r = await editarVisita(
     id,
     {
-      responsavel: campo(fd, 'responsavel'),
-      telefone: campo(fd, 'telefone'),
-      endereco: campo(fd, 'endereco'),
-      numero: campo(fd, 'numero'),
-      complemento: campo(fd, 'complemento'),
-      bairro: campo(fd, 'bairro'),
-      cep: campo(fd, 'cep'),
-      observacoes: campo(fd, 'observacoes'),
-      data_visita: campo(fd, 'data_visita'),
-      periodo: campo(fd, 'periodo'),
-      confirmar_contato: confirmar === 'sim' ? true : confirmar === 'nao' ? false : null,
+      responsavel: valores.responsavel,
+      telefone: valores.telefone,
+      endereco: valores.endereco,
+      numero: valores.numero,
+      complemento: valores.complemento,
+      bairro: valores.bairro,
+      cep: valores.cep,
+      observacoes: valores.observacoes,
+      data_visita: valores.data_visita,
+      periodo: valores.periodo,
+      confirmar_contato: valores.confirmar === 'sim' ? true : valores.confirmar === 'nao' ? false : null,
     },
     eu,
     'painel',
   );
-  if ('erro' in r) return { erro: r.erro, erros: r.erros };
+  if ('erro' in r) return { erro: r.erro, erros: r.erros, valores };
   if (!r.mudancas.length) return { ok: 'Nada foi alterado: os dados já estavam assim.' };
   revalidatePath('/admin', 'layout');
   return { ok: 'Alterações salvas.', mudancas: r.mudancas };
+}
+
+export type CadastroParecido = { id: number; responsavel: string; telefone: string; endereco: string; visita: string; motivos: string[] };
+export type RetornoCadastro =
+  | { erro?: string; erros?: Record<string, string>; parecidas?: CadastroParecido[]; ignoradas?: number[]; valores?: DadosDaVisita; criada?: { id: number; nome: string; visita: string } }
+  | undefined;
+
+// Os nomes dos campos do formulário público são outros
+const CAMPO_DO_PAINEL: Record<string, string> = { nome: 'responsavel', rua: 'endereco', dia: 'data_visita' };
+
+// Cadastro de uma visita pelo painel (por exemplo, pedido feito por telefone ou no papel).
+export async function cadastrarVisita(_anterior: RetornoCadastro, fd: FormData): Promise<RetornoCadastro> {
+  const eu = await exigirUsuario();
+  const valores = valoresDaVisita(fd);
+  const { dados, erros } = validarNovaVisita({
+    nome: valores.responsavel,
+    telefone: valores.telefone,
+    rua: valores.endereco,
+    numero: valores.numero,
+    complemento: valores.complemento,
+    bairro: valores.bairro,
+    cep: valores.cep,
+    obs: valores.observacoes,
+    dia: valores.data_visita,
+    periodo: valores.periodo,
+    confirmar: valores.confirmar === 'sim' ? true : valores.confirmar === 'nao' ? false : null,
+  });
+  const errosDoPainel = Object.fromEntries(Object.entries(erros).map(([k, v]) => [CAMPO_DO_PAINEL[k] ?? k, v]));
+  if (!valores.confirmar) errosDoPainel.confirmar = 'Escolha se é preciso entrar em contato antes.';
+  if (dados.cep && dados.cep.replace(/\D/g, '').length !== 8) errosDoPainel.cep = 'O CEP tem 8 números.';
+  // Cadastros parecidos que a pessoa já disse serem de outra família (voltam ao formulário em toda resposta)
+  const ignorar = new Set(fd.getAll('ignorar').flatMap((v) => String(v).split(',')).map(Number).filter((n) => Number.isInteger(n) && n > 0));
+  if (Object.keys(errosDoPainel).length) return { erro: 'Confira os campos destacados.', erros: errosDoPainel, valores, ignoradas: [...ignorar] };
+
+  // Cadastro parecido: mostra antes de gravar.
+  const todas = await parecidasCom(dados).catch((e) => {
+    console.error('Falha ao procurar cadastro parecido', e);
+    return [];
+  });
+  const novas = todas.filter((p) => !ignorar.has(p.id));
+  if (novas.length) {
+    const completas = await sql<Visita>('SELECT * FROM visitas WHERE id = ANY($1::int[])', [novas.map((p) => p.id)]);
+    const porId = new Map(completas.map((v) => [v.id, v]));
+    await registrar('visita.duplicidade.aviso', eu, dados.responsavel, {
+      origem: 'painel',
+      endereço: `${dados.endereco}, ${dados.numero}`,
+      'parecido com': novas.map((p) => `Nº ${p.id} (${p.motivos.join(', ')})`).join(' · '),
+    });
+    return {
+      erro: 'Parece que esta família já foi cadastrada. Confira antes de gravar.',
+      valores,
+      ignoradas: [...ignorar],
+      parecidas: novas.flatMap((p) => {
+        const v = porId.get(p.id);
+        return v
+          ? [{ id: v.id, responsavel: v.responsavel, telefone: v.telefone, endereco: enderecoCompleto(v), visita: `${nomeDia(v.data_visita)} · ${nomePeriodo(v.periodo)}`, motivos: p.motivos }]
+          : [];
+      }),
+    };
+  }
+
+  const nova = await gravarVisita(dados, { lat: null, lng: null, precisao: null, ip: null, agente: null, extra: { aparelho: `Cadastrado no painel por ${eu.nome}` } });
+  await registrar('visita.criada.painel', eu, `Nº ${nova.id} · ${nova.responsavel}`, {
+    endereço: `${nova.endereco}, ${nova.numero}`,
+    visita: `${nomeDia(nova.data_visita)} · ${nomePeriodo(nova.periodo)}`,
+    'confirmar antes': nova.confirmar_contato == null ? 'não informado' : nova.confirmar_contato ? 'sim' : 'não',
+    ...(todas.length ? { 'aviso de duplicidade': `confirmou que é outra família (parecido com ${todas.map((p) => `Nº ${p.id}`).join(', ')})` } : {}),
+  });
+  // Bairro pelos Correios (o digitado é respeitado), aviso no MCP, mapa e duplicidade com a IA
+  void processarNovaVisita(nova.id, false, null);
+  revalidatePath('/admin', 'layout');
+  return { criada: { id: nova.id, nome: nova.responsavel, visita: `${nomeDia(nova.data_visita)} · ${nomePeriodo(nova.periodo)}` } };
 }
 
 // Controle do que já foi passado para o portal oficial.
