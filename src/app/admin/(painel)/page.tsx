@@ -6,6 +6,7 @@ import { suspeitasPorVisita } from '@/lib/duplicidade';
 import { enderecoCompleto, filtrosParaUrl, lerFiltros, listarVisitas, resumoVisitas, type Visita } from '@/lib/visitas';
 import BotaoBairros from './BotaoBairros';
 import BotaoExcluir from './BotaoExcluir';
+import CaixaConfirmada from './CaixaConfirmada';
 import CaixaPortal from './CaixaPortal';
 import SeletorVisao, { type Visao } from './SeletorVisao';
 import TabelaVisitas, { type LinhaVisita } from './TabelaVisitas';
@@ -26,7 +27,11 @@ const quando = new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle:
 const diaIso = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' });
 const diaHora = new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' });
 
-// "13/11, 14:02 · Rodney": quando e quem marcou o cadastro como migrado para o portal oficial
+// "13/11, 14:02 · Rodney": quando e quem marcou
+const quemEQuando = (em: Date | null, por: string | null) => (em ? [diaHora.format(em), por?.split(' ')[0]].filter(Boolean).join(' · ') : undefined);
+const detalheDaConfirmacao = (v: Visita) => quemEQuando(v.confirmada_em, v.confirmada_por);
+
+// Quando e quem marcou o cadastro como migrado para o portal oficial
 function detalheDoPortal(v: Visita) {
   if (!v.migrado_em) return undefined;
   return [diaHora.format(v.migrado_em), v.migrado_por?.split(' ')[0]].filter(Boolean).join(' · ');
@@ -95,6 +100,8 @@ export default async function Painel({ searchParams }: { searchParams: Promise<R
           criadoDia: diaIso.format(v.criado_em),
           migrado: v.migrado_em != null,
           detalhePortal: detalheDoPortal(v),
+          confirmada: v.confirmada_em != null,
+          detalheConfirmada: detalheDaConfirmacao(v),
           linkMapa: linkMapa(v),
           duplicidades: (suspeitas.get(v.id) ?? []).map((s) => ({ par: s.par, texto: `Nº ${s.id} · ${s.responsavel}` })),
           ...(superAdmin ? { ip: v.ip ?? '', aparelho: v.extra?.aparelho ?? '' } : {}),
@@ -145,6 +152,36 @@ export default async function Painel({ searchParams }: { searchParams: Promise<R
         </section>
       )}
 
+      {resumo.total > 0 && (
+        <section aria-label="Confirmação com a família" className="rounded-xl border border-stone-200 bg-white p-4">
+          <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+            <p className="text-stone-800">
+              <span className="font-bold text-stone-900">Confirmação por telefone:</span> {resumo.confirmadas} de {resumo.total} já{' '}
+              {resumo.confirmadas === 1 ? 'confirmada' : 'confirmadas'}
+              {resumo.pedemContato > 0 &&
+                (resumo.pendentes > 0 ? (
+                  <>
+                    {' · '}
+                    <span className="font-semibold text-amber-800">
+                      {resumo.pendentes === 1 ? 'falta 1' : `faltam ${resumo.pendentes}`} das {resumo.pedemContato} que pediram contato antes
+                    </span>
+                  </>
+                ) : (
+                  <span className="font-semibold text-emerald-800"> · todas as que pediram contato antes já foram confirmadas</span>
+                ))}
+            </p>
+            {resumo.pendentes > 0 && filtros.confirmada !== 'pendente' && (
+              <Link href="/admin?confirmada=pendente" className="text-sm font-semibold text-emerald-800 underline">
+                Ver as que faltam
+              </Link>
+            )}
+          </div>
+          <div className="mt-2 h-2 overflow-hidden rounded-full bg-stone-200" aria-hidden="true">
+            <div className="h-full rounded-full bg-emerald-600" style={{ width: `${(resumo.confirmadas / resumo.total) * 100}%` }} />
+          </div>
+        </section>
+      )}
+
       {paresSuspeitos > 0 && (
         <section aria-label="Duplicidades" className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 rounded-xl border border-amber-300 bg-amber-50 p-4 text-amber-950">
           <p>
@@ -160,7 +197,7 @@ export default async function Painel({ searchParams }: { searchParams: Promise<R
       )}
 
       <section className="rounded-xl border border-stone-200 bg-white p-4">
-        <form method="get" className="grid gap-3 sm:grid-cols-2 sm:items-end lg:grid-cols-[1fr_auto_auto_auto_auto]">
+        <form method="get" className="grid gap-3 sm:grid-cols-2 sm:items-end lg:grid-cols-3 xl:grid-cols-[minmax(14rem,1fr)_auto_auto_auto_auto_auto]">
           <div>
             <label htmlFor="q" className="mb-1 block text-sm font-semibold text-stone-700">
               Buscar
@@ -201,6 +238,17 @@ export default async function Painel({ searchParams }: { searchParams: Promise<R
               <option value="">Todos</option>
               <option value="falta">Falta migrar</option>
               <option value="migrado">Já migrados</option>
+            </select>
+          </div>
+          <div>
+            <label htmlFor="confirmada" className="mb-1 block text-sm font-semibold text-stone-700">
+              Confirmação
+            </label>
+            <select id="confirmada" name="confirmada" defaultValue={filtros.confirmada ?? ''} className="adm-campo">
+              <option value="">Todas</option>
+              <option value="pendente">Falta (pediram contato)</option>
+              <option value="nao">Não confirmadas</option>
+              <option value="sim">Já confirmadas</option>
             </select>
           </div>
           <div className="flex gap-2">
@@ -298,6 +346,16 @@ export default async function Painel({ searchParams }: { searchParams: Promise<R
                 <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-stone-100 pt-3 text-sm">
                   <span className="text-stone-600">Portal oficial:</span>
                   <CaixaPortal id={v.id} nome={v.responsavel} migrado={v.migrado_em != null} detalhe={detalheDoPortal(v)} />
+                </div>
+                <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+                  <span className="text-stone-600">Ligou e confirmou a visita:</span>
+                  <CaixaConfirmada
+                    id={v.id}
+                    nome={v.responsavel}
+                    confirmada={v.confirmada_em != null}
+                    pediuContato={v.confirmar_contato === true}
+                    detalhe={detalheDaConfirmacao(v)}
+                  />
                 </div>
                 <p className="mt-2 text-xs text-stone-500">
                   Cadastrado em {quando.format(v.criado_em)} · No mapa: {v.precisao ? PRECISOES[v.precisao] : 'ainda não localizado'}

@@ -6,6 +6,7 @@ import { sql } from '@/lib/db';
 import { suspeitasPorVisita } from '@/lib/duplicidade';
 import type { Visita } from '@/lib/visitas';
 import BotaoExcluir from '../../BotaoExcluir';
+import CaixaConfirmada from '../../CaixaConfirmada';
 import CaixaPortal from '../../CaixaPortal';
 import FormularioEdicao from './FormularioEdicao';
 
@@ -35,9 +36,17 @@ export default async function EditarVisita({ params }: { params: Promise<{ id: s
             Cadastrado em {quando.format(v.criado_em)} · No mapa: {v.precisao ? PRECISOES[v.precisao] : 'ainda não localizado'}
           </p>
         </div>
-        <div className="flex items-center gap-3 rounded-xl border border-stone-200 bg-white px-3 py-2 text-sm">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl border border-stone-200 bg-white px-3 py-2 text-sm">
           <span className="text-stone-600">Portal oficial:</span>
           <CaixaPortal id={v.id} nome={v.responsavel} migrado={v.migrado_em != null} />
+          <span className="text-stone-600">Ligou e confirmou:</span>
+          <CaixaConfirmada
+            id={v.id}
+            nome={v.responsavel}
+            confirmada={v.confirmada_em != null}
+            pediuContato={v.confirmar_contato === true}
+            detalhe={v.confirmada_em ? [quando.format(v.confirmada_em), v.confirmada_por].filter(Boolean).join(' · ') : undefined}
+          />
           <BotaoExcluir id={v.id} nome={v.responsavel} />
         </div>
       </div>

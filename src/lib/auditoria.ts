@@ -30,6 +30,8 @@ export const ACOES: Record<string, string> = {
   'visita.bairros': 'Conferiu os bairros pela rua',
   'visita.portal': 'Marcou como cadastrada no portal oficial',
   'visita.portal.desfeito': 'Desmarcou o cadastro no portal oficial',
+  'visita.confirmada': 'Marcou que ligou e confirmou a visita com a família',
+  'visita.confirmada.desfeito': 'Desmarcou a confirmação da visita com a família',
   'visita.duplicidade': 'Possível duplicidade apontada',
   'visita.duplicidade.aviso': 'Aviso de possível duplicidade a quem cadastrava',
   'visita.duplicidade.descartada': 'Marcou que não é duplicidade',

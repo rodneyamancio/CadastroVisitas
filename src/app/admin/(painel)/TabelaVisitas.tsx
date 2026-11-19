@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import BotaoExcluir from './BotaoExcluir';
+import CaixaConfirmada from './CaixaConfirmada';
 import CaixaPortal from './CaixaPortal';
 
 // Uma linha da tabela, já pronta para mostrar. O IP e o aparelho só vêm para o super admin.
@@ -24,6 +25,9 @@ export type LinhaVisita = {
   criadoDia: string; // AAAA-MM-DD, horário de Brasília
   migrado: boolean;
   detalhePortal?: string;
+  // A equipe já ligou e confirmou a visita com a família
+  confirmada: boolean;
+  detalheConfirmada?: string;
   linkMapa: string;
   // Outros cadastros que podem ser da mesma família
   duplicidades: { par: number; texto: string }[];
@@ -31,11 +35,11 @@ export type LinhaVisita = {
   aparelho?: string;
 };
 
-type Coluna = 'portal' | 'responsavel' | 'telefone' | 'endereco' | 'bairro' | 'dia' | 'periodo' | 'confirmar' | 'criado' | 'ip';
+type Coluna = 'portal' | 'responsavel' | 'telefone' | 'endereco' | 'bairro' | 'dia' | 'periodo' | 'confirmar' | 'confirmada' | 'criado' | 'ip';
 type Ordem = { coluna: Coluna; sentido: 'asc' | 'desc' } | null;
 type Filtros = Record<Coluna, string>;
 
-const SEM_FILTROS: Filtros = { portal: '', responsavel: '', telefone: '', endereco: '', bairro: '', dia: '', periodo: '', confirmar: '', criado: '', ip: '' };
+const SEM_FILTROS: Filtros = { portal: '', responsavel: '', telefone: '', endereco: '', bairro: '', dia: '', periodo: '', confirmar: '', confirmada: '', criado: '', ip: '' };
 const SEM_BAIRRO = '(sem bairro)';
 const GUARDADO = 'painel-tabela-visitas';
 
@@ -48,10 +52,14 @@ const limpo = (t: string) =>
 const contem = (onde: string, trecho: string) => limpo(onde).includes(limpo(trecho.trim()));
 const ordemConfirmar = (l: LinhaVisita) => (l.confirmar == null ? 2 : l.confirmar ? 0 : 1);
 const textoConfirmar = (l: LinhaVisita) => (l.confirmar == null ? 'Não informado' : l.confirmar ? 'Sim' : 'Não');
+// Situação da confirmação: 0 = falta confirmar (pediu contato), 1 = não confirmada, 2 = confirmada
+const ordemConfirmada = (l: LinhaVisita) => (l.confirmada ? 2 : l.confirmar ? 0 : 1);
+const textoConfirmada = (l: LinhaVisita) => (l.confirmada ? 'Confirmada' : l.confirmar ? 'Falta confirmar (pediu contato)' : 'Não confirmada');
 const dataCurta = (iso: string) => iso.split('-').reverse().join('/');
 
 const COLUNAS: { id: Coluna; nome: string; soSuperAdmin?: boolean; comparar: (a: LinhaVisita, b: LinhaVisita) => number }[] = [
   { id: 'portal', nome: 'Portal oficial', comparar: (a, b) => Number(a.migrado) - Number(b.migrado) },
+  { id: 'confirmada', nome: 'Ligou e confirmou', comparar: (a, b) => ordemConfirmada(a) - ordemConfirmada(b) },
   { id: 'responsavel', nome: 'Responsável', comparar: (a, b) => alfabetico.compare(a.responsavel, b.responsavel) },
   { id: 'telefone', nome: 'Telefone', comparar: (a, b) => alfabetico.compare(a.telefone, b.telefone) },
   { id: 'endereco', nome: 'Endereço', comparar: (a, b) => alfabetico.compare(a.endereco, b.endereco) },
@@ -71,6 +79,7 @@ const GRUPOS: { id: string; nome: string; soSuperAdmin?: boolean; chave: (l: Lin
   { id: 'periodo', nome: 'Horário', chave: (l) => l.periodo, rotulo: (l) => l.periodoNome },
   { id: 'diaPeriodo', nome: 'Dia e horário', chave: (l) => `${l.dataVisita}|${l.periodo}`, rotulo: (l) => `${l.dia} · ${l.periodoNome}` },
   { id: 'confirmar', nome: 'Confirmar antes', chave: (l) => String(ordemConfirmar(l)), rotulo: (l) => `Confirmar antes: ${textoConfirmar(l)}` },
+  { id: 'confirmada', nome: 'Ligou e confirmou', chave: (l) => String(ordemConfirmada(l)), rotulo: (l) => textoConfirmada(l) },
   { id: 'duplicidade', nome: 'Possível duplicidade', chave: (l) => (l.duplicidades.length ? '0' : '1'), rotulo: (l) => (l.duplicidades.length ? 'Com possível duplicidade' : 'Sem duplicidade apontada') },
   { id: 'criado', nome: 'Data do cadastro', chave: (l) => l.criadoDia, rotulo: (l) => `Cadastradas em ${dataCurta(l.criadoDia)}` },
   { id: 'ip', nome: 'IP de quem cadastrou', soSuperAdmin: true, chave: (l) => (l.ip ? `0${l.ip}` : '1'), rotulo: (l) => (l.ip ? `${l.ip}${l.aparelho ? ` · ${l.aparelho}` : ''}` : 'Sem IP') },
@@ -88,6 +97,7 @@ function passa(l: LinhaVisita, f: Filtros): boolean {
   if (f.dia && l.dataVisita !== f.dia) return false;
   if (f.periodo && l.periodo !== f.periodo) return false;
   if (f.confirmar && String(ordemConfirmar(l)) !== f.confirmar) return false;
+  if (f.confirmada === 'nao' ? l.confirmada : f.confirmada && String(ordemConfirmada(l)) !== f.confirmada) return false;
   if (f.criado && l.criadoDia !== f.criado) return false;
   if (f.ip.trim() && !contem(`${l.ip ?? ''} ${l.aparelho ?? ''}`, f.ip)) return false;
   return true;
@@ -196,6 +206,12 @@ export default function TabelaVisitas({ linhas, superAdmin }: { linhas: LinhaVis
           { valor: '1', nome: 'Não' },
           { valor: '2', nome: 'Não informado' },
         ]);
+      case 'confirmada':
+        return escolha([
+          { valor: '0', nome: 'Falta confirmar (pediu contato)' },
+          { valor: 'nao', nome: 'Não confirmadas (todas)' },
+          { valor: '2', nome: 'Confirmadas' },
+        ]);
       case 'criado':
         return escolha(opcoes.cadastros.map((d) => ({ valor: d, nome: dataCurta(d) })));
       default:
@@ -207,6 +223,9 @@ export default function TabelaVisitas({ linhas, superAdmin }: { linhas: LinhaVis
     <tr key={l.id} className="align-top hover:bg-stone-50">
       <td className="px-2 py-2">
         <CaixaPortal id={l.id} nome={l.responsavel} migrado={l.migrado} detalhe={l.detalhePortal} />
+      </td>
+      <td className="px-2 py-2">
+        <CaixaConfirmada id={l.id} nome={l.responsavel} confirmada={l.confirmada} pediuContato={l.confirmar === true} detalhe={l.detalheConfirmada} />
       </td>
       <td className="min-w-32 px-2 py-2.5 font-semibold text-stone-900">
         {l.responsavel}

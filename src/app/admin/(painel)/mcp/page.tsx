@@ -14,6 +14,7 @@ const FERRAMENTAS = [
   { nome: 'ver_visita', para: 'todos os dados de um cadastro, pelo número ou procurando por nome, telefone ou rua' },
   { nome: 'criar_visita', para: 'cadastra uma família nova (confere antes se já existe cadastro parecido)' },
   { nome: 'editar_visita', para: 'altera os dados de um cadastro (nome, telefone, endereço, dia, horário…)' },
+  { nome: 'marcar_visita_confirmada', para: 'marca (ou desmarca) que a equipe já ligou e confirmou a visita com a família' },
   { nome: 'marcar_portal_oficial', para: 'marca (ou desmarca) visitas como já migradas para o portal oficial' },
   { nome: 'resumo_visitas', para: 'totais por dia, período e bairro' },
   { nome: 'estatisticas_site', para: 'quantos entraram no formulário e quantos concluíram' },

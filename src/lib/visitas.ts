@@ -26,6 +26,9 @@ export type Visita = {
   // Portal oficial: quando e por quem o cadastro foi passado para lá (nulo = ainda falta)
   migrado_em: Date | null;
   migrado_por: string | null;
+  // A equipe já ligou e confirmou a visita com a família (nulo = ainda não)
+  confirmada_em: Date | null;
+  confirmada_por: string | null;
   // Entrar em contato antes para confirmar a visita? (nulo = cadastro antigo, sem resposta)
   confirmar_contato: boolean | null;
   ip: string | null;
@@ -41,18 +44,27 @@ export type Visita = {
   } | null;
 };
 
-export type Filtros = { q?: string; dia?: string; periodo?: string; portal?: 'falta' | 'migrado' };
+// confirmada: 'pendente' = a família pediu contato antes e ainda não foi confirmada; 'nao' = todas as não confirmadas
+export type Filtros = { q?: string; dia?: string; periodo?: string; portal?: 'falta' | 'migrado'; confirmada?: 'pendente' | 'nao' | 'sim' };
+
+export const FILTRO_CONFIRMADA = {
+  pendente: 'confirmada_em IS NULL AND confirmar_contato IS TRUE',
+  nao: 'confirmada_em IS NULL',
+  sim: 'confirmada_em IS NOT NULL',
+} as const;
 
 export function lerFiltros(sp: Record<string, string | string[] | undefined>): Filtros {
   const um = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) ?? '';
   const dia = um(sp.dia);
   const periodo = um(sp.periodo);
   const portal = um(sp.portal);
+  const confirmada = um(sp.confirmada);
   return {
     q: um(sp.q).trim().slice(0, 100) || undefined,
     dia: DIAS.some((d) => d.valor === dia) ? dia : undefined,
     periodo: PERIODOS.some((p) => p.valor === periodo) ? periodo : undefined,
     portal: portal === 'falta' || portal === 'migrado' ? portal : undefined,
+    confirmada: confirmada === 'pendente' || confirmada === 'nao' || confirmada === 'sim' ? confirmada : undefined,
   };
 }
 
@@ -62,6 +74,7 @@ export function filtrosParaUrl(f: Filtros): string {
   if (f.dia) p.set('dia', f.dia);
   if (f.periodo) p.set('periodo', f.periodo);
   if (f.portal) p.set('portal', f.portal);
+  if (f.confirmada) p.set('confirmada', f.confirmada);
   return p.toString();
 }
 
@@ -77,6 +90,7 @@ export async function listarVisitas(f: Filtros = {}): Promise<Visita[]> {
     onde.push(`periodo = $${params.length}`);
   }
   if (f.portal) onde.push(f.portal === 'migrado' ? 'migrado_em IS NOT NULL' : 'migrado_em IS NULL');
+  if (f.confirmada) onde.push(FILTRO_CONFIRMADA[f.confirmada]);
   if (f.q) {
     params.push(`%${f.q.replace(/[%_\\]/g, '\\$&')}%`);
     const n = params.length;
@@ -91,21 +105,31 @@ export async function listarVisitas(f: Filtros = {}): Promise<Visita[]> {
   );
 }
 
-export type Resumo = { total: number; migradas: number; grupos: Record<string, number> };
+// pedemContato: famílias que pediram contato antes; pendentes: dessas, as que ainda não foram confirmadas
+export type Resumo = { total: number; migradas: number; confirmadas: number; pedemContato: number; pendentes: number; grupos: Record<string, number> };
 
 export async function resumoVisitas(): Promise<Resumo> {
-  const linhas = await sql<{ data_visita: string; periodo: string; n: number; migradas: number }>(
-    'SELECT data_visita, periodo, count(*)::int AS n, count(migrado_em)::int AS migradas FROM visitas GROUP BY 1, 2',
+  const linhas = await sql<{ data_visita: string; periodo: string; n: number; migradas: number; confirmadas: number; pedem: number; pendentes: number }>(
+    `SELECT data_visita, periodo, count(*)::int AS n, count(migrado_em)::int AS migradas, count(confirmada_em)::int AS confirmadas,
+            count(*) FILTER (WHERE confirmar_contato)::int AS pedem,
+            count(*) FILTER (WHERE confirmar_contato AND confirmada_em IS NULL)::int AS pendentes
+     FROM visitas GROUP BY 1, 2`,
   );
   const grupos: Record<string, number> = {};
   let total = 0;
   let migradas = 0;
+  let confirmadas = 0;
+  let pedemContato = 0;
+  let pendentes = 0;
   for (const l of linhas) {
     grupos[`${l.data_visita}|${l.periodo}`] = l.n;
     total += l.n;
     migradas += l.migradas;
+    confirmadas += l.confirmadas;
+    pedemContato += l.pedem;
+    pendentes += l.pendentes;
   }
-  return { total, migradas, grupos };
+  return { total, migradas, confirmadas, pedemContato, pendentes, grupos };
 }
 
 export function enderecoCompleto(v: Pick<Visita, 'endereco' | 'numero' | 'complemento' | 'bairro' | 'cidade' | 'uf'>): string {
@@ -123,6 +147,18 @@ export async function marcarNoPortal(id: number, migrado: boolean, por: string):
         [id, por],
       )
     : await sql<Visita>('UPDATE visitas SET migrado_em = NULL, migrado_por = NULL WHERE id = $1 RETURNING *', [id]);
+  return v ?? null;
+}
+
+// Marca (ou desmarca) que a equipe já ligou e confirmou a visita com a família.
+// Marcar de novo o que já estava marcado mantém a data e o nome de quem marcou primeiro.
+export async function marcarConfirmada(id: number, confirmada: boolean, por: string): Promise<Visita | null> {
+  const [v] = confirmada
+    ? await sql<Visita>(
+        'UPDATE visitas SET confirmada_em = COALESCE(confirmada_em, now()), confirmada_por = COALESCE(confirmada_por, $2) WHERE id = $1 RETURNING *',
+        [id, por],
+      )
+    : await sql<Visita>('UPDATE visitas SET confirmada_em = NULL, confirmada_por = NULL WHERE id = $1 RETURNING *', [id]);
   return v ?? null;
 }
 

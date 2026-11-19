@@ -19,7 +19,7 @@ import { aprovarPedidoDeAcesso, recusarPedidoDeAcesso } from '@/lib/pedidos';
 import { montarRoteiro, ultimoRoteiro } from '@/lib/roteiro';
 import { conferirSenha, hashSenha } from '@/lib/senha';
 import { criarToken, validadeEmTexto } from '@/lib/tokens';
-import { enderecoCompleto, listarVisitas, localizarVisita, marcarNoPortal, reconferirBairros, type BairroCorrigido, type Visita } from '@/lib/visitas';
+import { enderecoCompleto, listarVisitas, localizarVisita, marcarConfirmada, marcarNoPortal, reconferirBairros, type BairroCorrigido, type Visita } from '@/lib/visitas';
 
 export type Retorno = { erro?: string; ok?: string; valores?: { nome?: string; email: string; perfil?: string; modo?: string } } | undefined;
 
@@ -202,6 +202,19 @@ export async function marcarPortalOficial(id: number, migrado: boolean): Promise
   const eu = await exigirUsuario();
   const v = await marcarNoPortal(id, migrado, eu.nome);
   if (v) await registrar(migrado ? 'visita.portal' : 'visita.portal.desfeito', eu, `Nº ${v.id} · ${v.responsavel}`, { endereço: enderecoCompleto(v) });
+  revalidatePath('/admin', 'layout');
+}
+
+// Controle de quem já foi avisado: a equipe ligou e confirmou a visita com a família.
+export async function marcarVisitaConfirmada(id: number, confirmada: boolean): Promise<void> {
+  const eu = await exigirUsuario();
+  const v = await marcarConfirmada(id, confirmada, eu.nome);
+  if (v) {
+    await registrar(confirmada ? 'visita.confirmada' : 'visita.confirmada.desfeito', eu, `Nº ${v.id} · ${v.responsavel}`, {
+      telefone: v.telefone,
+      visita: `${nomeDia(v.data_visita)} · ${nomePeriodo(v.periodo)}`,
+    });
+  }
   revalidatePath('/admin', 'layout');
 }
 

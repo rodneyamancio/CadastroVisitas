@@ -43,6 +43,10 @@ docker compose -f docker-compose.yml -f docker-compose.dev.yml up
   de novo. O formulário público também avisa quem está cadastrando, enquanto preenche (logo abaixo do nome, do
   telefone ou do endereço), quando já existe um cadastro parecido (só pelas regras) e pergunta se é a mesma família. O aviso mostra só o que a pessoa já digitou de forma parecida:
   telefone igual não revela o nome nem o endereço do outro cadastro.
+- **Ligou e confirmou a visita**: caixa de marcar em cada visita (cards, tabela e tela de editar) para registrar que a
+  equipe já ligou e a família confirmou. Guarda quem marcou e quando; as famílias que pediram contato antes ficam em
+  destaque ("Falta confirmar") até serem marcadas. Tem contador, filtro, colunas no Excel e, no MCP, o campo
+  `visita_confirmada_por_telefone` e a ferramenta `marcar_visita_confirmada`.
 - **Nova visita** (`/admin/visitas/nova`, botão no topo da lista de visitas): cadastro feito pela equipe, para pedidos
   recebidos por telefone, no papel ou pessoalmente. Mesmas regras do formulário público; antes de gravar mostra os
   cadastros parecidos (com todos os dados) e só grava com "É outra família: cadastrar mesmo assim". Fica na auditoria.

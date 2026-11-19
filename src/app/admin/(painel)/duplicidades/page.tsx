@@ -47,6 +47,10 @@ function Lado({ titulo, v }: { titulo: string; v: Visita }) {
         <dd>{quando.format(v.criado_em)}</dd>
         <dt className="text-stone-500">Portal oficial</dt>
         <dd className={v.migrado_em ? 'font-semibold text-emerald-800' : 'font-semibold text-amber-800'}>{v.migrado_em ? 'Migrado' : 'Falta migrar'}</dd>
+        <dt className="text-stone-500">Ligou e confirmou</dt>
+        <dd className={v.confirmada_em ? 'font-semibold text-emerald-800' : v.confirmar_contato ? 'font-semibold text-amber-800' : 'text-stone-600'}>
+          {v.confirmada_em ? 'Confirmada' : v.confirmar_contato ? 'Falta confirmar' : 'Não confirmada'}
+        </dd>
       </dl>
       <div className="mt-2 flex justify-end gap-1">
         <Link href={`/admin/visitas/${v.id}`} className="rounded-lg px-2 py-1 text-sm font-semibold text-emerald-800 hover:bg-emerald-50">

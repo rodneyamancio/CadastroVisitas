@@ -108,6 +108,9 @@ ALTER TABLE visitas ADD COLUMN IF NOT EXISTS bairro_informado TEXT;
 -- Controle do que já foi passado para o portal oficial (este sistema é paralelo a ele)
 ALTER TABLE visitas ADD COLUMN IF NOT EXISTS migrado_em TIMESTAMPTZ;
 ALTER TABLE visitas ADD COLUMN IF NOT EXISTS migrado_por TEXT;
+-- A equipe já ligou para a família e confirmou a visita? (quando e quem marcou)
+ALTER TABLE visitas ADD COLUMN IF NOT EXISTS confirmada_em TIMESTAMPTZ;
+ALTER TABLE visitas ADD COLUMN IF NOT EXISTS confirmada_por TEXT;
 
 -- Entrar em contato com a família antes, para confirmar a visita? (nulo = cadastro antigo, sem resposta)
 ALTER TABLE visitas ADD COLUMN IF NOT EXISTS confirmar_contato BOOLEAN;

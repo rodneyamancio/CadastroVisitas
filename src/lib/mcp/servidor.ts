@@ -10,7 +10,7 @@ import { editarVisita, type Edicao } from '../edicao';
 import { PERIODOS_SITE, estatisticasDoSite } from '../estatisticas';
 import { aprovarPedidoDeAcesso, pedidosPendentes, recusarPedidoDeAcesso } from '../pedidos';
 import { ultimoRoteiro } from '../roteiro';
-import { enderecoCompleto, marcarNoPortal, reconferirBairros, type Visita } from '../visitas';
+import { FILTRO_CONFIRMADA, enderecoCompleto, marcarConfirmada, marcarNoPortal, reconferirBairros, type Visita } from '../visitas';
 import { RECURSOS } from './sessoes';
 import type { DonoDoToken } from './tokens';
 
@@ -22,6 +22,7 @@ const INSTRUCOES = `Servidor do "${TITULO}": cadastro de famílias que pediram v
 
 - Para saber o que chegou de novo, use "novidades": ela devolve só os cadastros recebidos desde a última consulta feita com este token.
 - Este sistema é paralelo ao portal oficial: cada visita informa em "portal_oficial" se já foi passada para lá. Para conferir os dados antes de passar, use "ver_visita"; depois de cadastrar no portal oficial, marque com "marcar_portal_oficial". Para cadastrar uma família nova, use "criar_visita"; para corrigir dados de um cadastro, use "editar_visita". "listar_visitas" com portal_oficial "falta" mostra o que ainda falta.
+- Cada visita informa em "entrar_em_contato_antes_para_confirmar" se a família pediu para ser avisada antes e, em "visita_confirmada_por_telefone", se a equipe já ligou e confirmou. Depois de ligar e a família confirmar, marque com "marcar_visita_confirmada". "listar_visitas" com confirmacao "pendente" mostra as que pediram contato e ainda faltam.
 - "listar_visitas", "ver_visita" e "resumo_visitas" consultam as famílias cadastradas; "estatisticas_site" mostra quantas pessoas entraram no formulário e quantas concluíram.
 - Os dados são pessoais (nome, telefone, endereço): use só para organizar as visitas.
 - Datas e horas estão no horário de Brasília.`;
@@ -59,6 +60,8 @@ function visitaParaMcp(v: Visita, superAdmin: boolean) {
     dia_da_visita_nome: nomeDia(v.data_visita),
     periodo: nomePeriodo(v.periodo),
     entrar_em_contato_antes_para_confirmar: v.confirmar_contato == null ? 'não informado' : v.confirmar_contato ? 'sim' : 'não',
+    // A equipe já ligou e confirmou a visita com a família?
+    visita_confirmada_por_telefone: v.confirmada_em ? { confirmada: true, em: quando(v.confirmada_em), por: v.confirmada_por } : { confirmada: false },
     cadastrado_em: quando(v.criado_em),
     portal_oficial: v.migrado_em ? { migrado: true, em: quando(v.migrado_em), por: v.migrado_por } : { migrado: false },
     posicao_no_mapa: temPonto ? { lat: v.lat, lng: v.lng, precisao: PRECISOES[v.precisao ?? ''] ?? v.precisao } : null,
@@ -121,8 +124,10 @@ async function resumo() {
       `SELECT to_char((criado_em AT TIME ZONE 'America/Sao_Paulo')::date, 'YYYY-MM-DD') AS dia, count(*)::int AS n
        FROM visitas WHERE criado_em >= now() - interval '14 days' GROUP BY 1 ORDER BY 1`,
     ),
-    sql<{ total: number; sem_posicao: number; migradas: number; ultima: Date | null }>(
-      'SELECT count(*)::int AS total, count(*) FILTER (WHERE lat IS NULL)::int AS sem_posicao, count(migrado_em)::int AS migradas, max(criado_em) AS ultima FROM visitas',
+    sql<{ total: number; sem_posicao: number; migradas: number; confirmadas: number; pedem: number; pendentes: number; ultima: Date | null }>(
+      `SELECT count(*)::int AS total, count(*) FILTER (WHERE lat IS NULL)::int AS sem_posicao, count(migrado_em)::int AS migradas,
+              count(confirmada_em)::int AS confirmadas, count(*) FILTER (WHERE confirmar_contato)::int AS pedem,
+              count(*) FILTER (WHERE confirmar_contato AND confirmada_em IS NULL)::int AS pendentes, max(criado_em) AS ultima FROM visitas`,
     ),
   ]);
   return {
@@ -139,6 +144,12 @@ async function resumo() {
     cadastros_recebidos_por_data_ultimos_14_dias: porData,
     sem_posicao_no_mapa: geral.sem_posicao,
     portal_oficial: { migradas: geral.migradas, faltam: geral.total - geral.migradas },
+    confirmacao_por_telefone: {
+      confirmadas: geral.confirmadas,
+      nao_confirmadas: geral.total - geral.confirmadas,
+      pediram_contato_antes: geral.pedem,
+      pediram_contato_e_faltam: geral.pendentes,
+    },
     ultimo_cadastro_em: quando(geral.ultima),
   };
 }
@@ -202,13 +213,17 @@ export function criarServidor(dono: DonoDoToken, assinaturas: Set<string>): McpS
     'listar_visitas',
     {
       title: 'Listar visitas',
-      description: 'Lista as famílias cadastradas, com filtros por dia, período, bairro, texto, data do cadastro e situação no portal oficial (já migrada ou não). Devolve no máximo "limite" itens por página.',
+      description: 'Lista as famílias cadastradas, com filtros por dia, período, bairro, texto, data do cadastro, situação no portal oficial (já migrada ou não) e confirmação por telefone. Devolve no máximo "limite" itens por página.',
       inputSchema: {
         busca: z.string().max(100).optional().describe('Trecho do nome, da rua, do bairro, do telefone ou das observações'),
         dia: z.enum(['sabado', 'domingo']).optional().describe('sabado = 28/11/2026, domingo = 29/11/2026'),
         periodo: z.enum(['manha', 'tarde']).optional(),
         bairro: z.string().max(80).optional(),
         portal_oficial: z.enum(['falta', 'migrado']).optional().describe('falta: ainda não passadas para o portal oficial; migrado: já passadas'),
+        confirmacao: z
+          .enum(['pendente', 'nao', 'sim'])
+          .optional()
+          .describe('pendente: a família pediu contato antes e ainda não foi confirmada; nao: todas as ainda não confirmadas; sim: já confirmadas por telefone'),
         cadastradas_desde: z.string().optional().describe('Só as cadastradas a partir desta data (AAAA-MM-DD), horário de Brasília'),
         ordem: z.enum(['recentes', 'roteiro']).optional().describe('recentes (padrão): as mais novas primeiro; roteiro: por dia, período, bairro e rua'),
         limite: z.number().int().min(1).max(200).optional().describe('Padrão: 50'),
@@ -233,6 +248,7 @@ export function criarServidor(dono: DonoDoToken, assinaturas: Set<string>): McpS
         onde.push(`bairro ILIKE $${params.length}`);
       }
       if (a.portal_oficial) onde.push(a.portal_oficial === 'migrado' ? 'migrado_em IS NOT NULL' : 'migrado_em IS NULL');
+      if (a.confirmacao) onde.push(FILTRO_CONFIRMADA[a.confirmacao]);
       if (a.busca) {
         params.push(curinga(a.busca));
         const n = params.length;
@@ -467,6 +483,57 @@ export function criarServidor(dono: DonoDoToken, assinaturas: Set<string>): McpS
       return texto(
         { alteracoes: r.mudancas, visita: visitaParaMcp(r.visita, superAdmin) },
         r.mudancas.length ? `${r.mudancas.length} ${r.mudancas.length === 1 ? 'campo alterado' : 'campos alterados'} no cadastro nº ${r.visita.id}.` : 'Nada mudou: os dados já estavam assim.',
+      );
+    },
+  );
+
+  servidor.registerTool(
+    'marcar_visita_confirmada',
+    {
+      title: 'Marcar que ligou e confirmou a visita',
+      description:
+        'Marca uma ou várias visitas como já confirmadas com a família por telefone (ou desmarca, com "confirmada": false). Use depois de alguém da equipe ligar e a família confirmar a visita. Fica registrado quem marcou e quando; marcar de novo o que já estava marcado não muda nada. Devolve os dados completos de cada visita e quantas ainda faltam.',
+      inputSchema: {
+        ids: z.array(z.number().int().positive()).min(1).max(200).describe('Números dos cadastros'),
+        confirmada: z.boolean().optional().describe('true (padrão): marcar como confirmada; false: desmarcar'),
+      },
+      annotations: { title: 'Marcar que ligou e confirmou a visita', readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    },
+    async ({ ids, confirmada }) => {
+      const marcar = confirmada ?? true;
+      const unicos = [...new Set(ids)];
+      const antes = await sql<{ id: number; confirmada: boolean }>('SELECT id, confirmada_em IS NOT NULL AS confirmada FROM visitas WHERE id = ANY($1::int[])', [unicos]);
+      const jaEstava = new Map(antes.map((a) => [a.id, a.confirmada]));
+      const visitas: Visita[] = [];
+      const mudaram: number[] = [];
+      for (const id of unicos) {
+        if (!jaEstava.has(id)) continue;
+        const v = await marcarConfirmada(id, marcar, dono.nome);
+        if (!v) continue;
+        visitas.push(v);
+        if (jaEstava.get(id) !== marcar) {
+          mudaram.push(id);
+          await registrar(marcar ? 'visita.confirmada' : 'visita.confirmada.desfeito', dono, `Nº ${v.id} · ${v.responsavel}`, {
+            origem: `MCP (token ${dono.nomeDoToken})`,
+            telefone: v.telefone,
+            visita: `${nomeDia(v.data_visita)} · ${nomePeriodo(v.periodo)}`,
+          });
+        }
+      }
+      const naoEncontradas = unicos.filter((id) => !jaEstava.has(id));
+      if (!visitas.length) return falha(`Nenhum cadastro encontrado com ${unicos.length === 1 ? 'o número' : 'os números'} ${unicos.join(', ')}.`);
+      const [c] = await sql<{ total: number; confirmadas: number; pendentes: number }>(
+        'SELECT count(*)::int AS total, count(confirmada_em)::int AS confirmadas, count(*) FILTER (WHERE confirmar_contato AND confirmada_em IS NULL)::int AS pendentes FROM visitas',
+      );
+      return texto(
+        {
+          [marcar ? 'marcadas_agora' : 'desmarcadas_agora']: mudaram,
+          ja_estavam_assim: visitas.map((v) => v.id).filter((id) => !mudaram.includes(id)),
+          cadastros_nao_encontrados: naoEncontradas,
+          confirmacao_por_telefone: { confirmadas: c.confirmadas, nao_confirmadas: c.total - c.confirmadas, pediram_contato_e_faltam: c.pendentes },
+          visitas: visitas.map((v) => visitaParaMcp(v, superAdmin)),
+        },
+        `${mudaram.length} ${mudaram.length === 1 ? 'visita' : 'visitas'} ${marcar ? (mudaram.length === 1 ? 'marcada como confirmada' : 'marcadas como confirmadas') : mudaram.length === 1 ? 'desmarcada' : 'desmarcadas'}. Confirmadas: ${c.confirmadas} de ${c.total}; das que pediram contato antes, faltam ${c.pendentes}.`,
       );
     },
   );

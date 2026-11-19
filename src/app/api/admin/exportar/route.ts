@@ -41,6 +41,9 @@ export async function GET(req: Request) {
     { header: 'No portal oficial', key: 'portal', width: 16 },
     { header: 'Migrado em', key: 'portal_em', width: 18 },
     { header: 'Migrado por', key: 'portal_por', width: 24 },
+    { header: 'Ligou e confirmou', key: 'confirmada', width: 18 },
+    { header: 'Confirmada em', key: 'confirmada_quando', width: 18 },
+    { header: 'Confirmada por', key: 'confirmada_quem', width: 24 },
     { header: 'Possível duplicidade com', key: 'duplicidade', width: 36 },
     // Dados de quem preencheu: só na planilha do super admin
     ...(superAdmin
@@ -66,6 +69,9 @@ export async function GET(req: Request) {
       portal: v.migrado_em ? 'Migrado' : 'Falta migrar',
       portal_em: v.migrado_em ? quando.format(v.migrado_em) : '',
       portal_por: v.migrado_por ?? '',
+      confirmada: v.confirmada_em ? 'Confirmada' : v.confirmar_contato ? 'Falta confirmar' : 'Não confirmada',
+      confirmada_quando: v.confirmada_em ? quando.format(v.confirmada_em) : '',
+      confirmada_quem: v.confirmada_por ?? '',
       duplicidade: (suspeitas.get(v.id) ?? []).map((s) => `Nº ${s.id} · ${s.responsavel}`).join('; '),
       aparelho: v.extra?.aparelho ?? '',
       tempo: v.extra?.tempoS ?? '',
