@@ -47,6 +47,21 @@ docker compose -f docker-compose.yml -f docker-compose.dev.yml up
   equipe já ligou e a família confirmou. Guarda quem marcou e quando; as famílias que pediram contato antes ficam em
   destaque ("Falta confirmar") até serem marcadas. Tem contador, filtro, colunas no Excel e, no MCP, o campo
   `visita_confirmada_por_telefone` e a ferramenta `marcar_visita_confirmada`.
+- **Grupos** (`/admin/grupos`, um item só no menu, com três abas):
+  - **Grupos**: cria os grupos que saem para as visitas, cada um com um líder. Mostra quantas visitas o grupo tem em
+    cada dia e horário e quantas já foram feitas. Dá para criar os grupos a partir do último roteiro da IA (só com as
+    visitas ainda sem grupo, já na ordem do trajeto). Na tela do grupo: ordenar pelo trajeto, abrir o trajeto no Google
+    Maps, mudar a visita de grupo, marcar ou desmarcar a visita feita e imprimir.
+  - **Distribuir visitas**: lista as visitas sem grupo e sugere, para cada uma, o grupo que tem a casa mais perto no
+    mesmo dia e horário (ou o mesmo bairro, quando a casa não tem posição no mapa). Nada é gravado até salvar.
+  - **Líderes**: cadastro dos líderes de grupo (perfil `lider`), com senha definida na hora ou convite por e-mail.
+  O grupo também é escolhido em **Nova visita** e na edição da visita, e aparece na lista de visitas (selo, filtro
+  "Grupo" e colunas no Excel).
+- **Área do líder** (`/lider`): feita para o celular. O líder entra com e-mail e senha pela mesma tela de entrada e vê só
+  as visitas dos grupos dele, por dia e horário, na ordem do trajeto. Marca a visita como feita (com aviso para
+  confirmar; depois só a coordenação desmarca), escreve comentários e lança visitas que não estavam na lista (entram
+  nas visitas do evento já como feitas, com o selo "Lançada pelo líder"). O líder não acessa o painel: `usuarioAtual()`
+  em `src/lib/auth.ts` só devolve admin e super admin, e toda ação do líder confere se a visita é de um grupo dele.
 - **Lista geral** (`/admin/lista-geral`) e **Cadastro sem visita** (`/admin/lista-geral/novo`): para guardar a família
   que não vai receber visita neste evento, só como base para os próximos. O cadastro sem visita fica numa tabela
   separada (`cadastros`) e por isso não entra em nada do que controla as visitas (tela de visitas, contadores, mapa,
@@ -94,7 +109,7 @@ claude mcp add --transport http missao-fraternal https://SEU-DOMINIO/api/mcp --h
 
 - **Ferramentas**: `novidades` (o que chegou desde a última consulta com o mesmo token), `listar_visitas`,
   `ver_visita` (todos os dados, pelo número ou por nome, telefone ou rua), `criar_visita` (cadastra uma família nova, com a mesma conferência de duplicidade do formulário), `editar_visita` (altera os dados de um
-  cadastro), `marcar_portal_oficial` (marca ou desmarca o que já foi migrado), `possiveis_duplicidades`, `lista_geral` (visitas deste evento junto com os cadastros sem visita), `criar_cadastro_sem_visita`, `editar_cadastro_sem_visita`, `resumo_visitas`, `estatisticas_site`, `ultimo_roteiro` e `conferir_bairros`. Para o super admin:
+  cadastro), `marcar_portal_oficial` (marca ou desmarca o que já foi migrado), `possiveis_duplicidades`, `listar_grupos` (grupos de visita, líder, feitas e visitas sem grupo; cada visita traz `grupo_id`, `visita_feita`, `comentario_do_lider` e `lancada_pelo_lider_no_dia`), `lista_geral` (visitas deste evento junto com os cadastros sem visita), `criar_cadastro_sem_visita`, `editar_cadastro_sem_visita`, `resumo_visitas`, `estatisticas_site`, `ultimo_roteiro` e `conferir_bairros`. Para o super admin:
   `pedidos_de_acesso`, `aprovar_pedido`, `recusar_pedido`, `listar_usuarios` e `auditoria`.
 - **Recursos**: `missao://visitas/recentes`, `missao://visitas/resumo`, `missao://visitas/{id}` e, para o super
   admin, `missao://usuarios/pedidos`.

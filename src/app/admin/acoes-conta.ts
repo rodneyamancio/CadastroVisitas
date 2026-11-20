@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { registrar } from '@/lib/auditoria';
-import { criarSessao, exigirSuperAdmin, exigirUsuario, ipDoCliente, urlBase } from '@/lib/auth';
+import { criarSessao, exigirPessoa, exigirSuperAdmin, exigirUsuario, ipDoCliente, urlBase } from '@/lib/auth';
 import { sql } from '@/lib/db';
 import { ErroEmail, configuracaoEmail, emailPronto, emails, enviarEmail, gravarConfigEmail } from '@/lib/email';
 import { dentroDoLimite } from '@/lib/limite';
@@ -27,7 +27,8 @@ function novaSenhaValida(fd: FormData): { senha: string } | { erro: string } {
 // ---------- Minha conta: trocar a própria senha ----------
 
 export async function alterarMinhaSenha(_anterior: RetornoConta, fd: FormData): Promise<RetornoConta> {
-  const eu = await exigirUsuario();
+  // Vale para o painel e para o líder de grupo
+  const eu = await exigirPessoa();
   if (!dentroDoLimite(`trocar-senha:${eu.id}`, 8, 10 * 60_000)) return { erro: 'Muitas tentativas. Aguarde 10 minutos e tente de novo.' };
   const [u] = await sql<{ senha_hash: string }>('SELECT senha_hash FROM usuarios WHERE id = $1', [eu.id]);
   if (!u || !conferirSenha(String(fd.get('atual') ?? ''), u.senha_hash)) return { erro: 'A senha atual não confere.' };
@@ -88,8 +89,8 @@ export async function definirSenha(_anterior: RetornoConta, fd: FormData): Promi
   const nova = novaSenhaValida(fd);
   if ('erro' in nova) return nova;
 
-  const [{ versao }] = await sql<{ versao: number }>(
-    'UPDATE usuarios SET senha_hash = $2, senha_pendente = FALSE, versao = versao + 1 WHERE id = $1 RETURNING versao',
+  const [{ versao, perfil }] = await sql<{ versao: number; perfil: string }>(
+    'UPDATE usuarios SET senha_hash = $2, senha_pendente = FALSE, versao = versao + 1 WHERE id = $1 RETURNING versao, perfil',
     [token.usuario_id, hashSenha(nova.senha)],
   );
   await usarToken(token.id);
@@ -97,7 +98,7 @@ export async function definirSenha(_anterior: RetornoConta, fd: FormData): Promi
     origem: token.tipo === 'convite' ? 'convite de novo usuário' : 'redefinição de senha',
   });
   await criarSessao(token.usuario_id, versao);
-  redirect('/admin');
+  redirect(perfil === 'lider' ? '/lider' : '/admin');
 }
 
 // ---------- Autocadastro de admin (página pública): fica aguardando a aprovação do super admin ----------

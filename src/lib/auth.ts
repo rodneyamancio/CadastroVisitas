@@ -9,6 +9,8 @@ const DURACAO_S = 12 * 60 * 60;
 
 export type Perfil = 'super_admin' | 'admin';
 export type Usuario = { id: number; nome: string; email: string; perfil: Perfil };
+// Quem está com a sessão aberta: gente do painel ou líder de grupo
+export type Pessoa = { id: number; nome: string; email: string; perfil: Perfil | 'lider' };
 
 function segredo(): Uint8Array {
   const s = process.env.SESSION_SECRET;
@@ -38,7 +40,7 @@ export async function encerrarSessao(): Promise<void> {
   (await cookies()).delete(COOKIE);
 }
 
-export const usuarioAtual = cache(async (): Promise<Usuario | null> => {
+export const pessoaAtual = cache(async (): Promise<Pessoa | null> => {
   const token = (await cookies()).get(COOKIE)?.value;
   if (!token) return null;
   let id: number;
@@ -51,14 +53,32 @@ export const usuarioAtual = cache(async (): Promise<Usuario | null> => {
     return null;
   }
   if (!Number.isInteger(id)) return null;
-  const [u] = await sql<Usuario>('SELECT id, nome, email, perfil FROM usuarios WHERE id = $1 AND ativo AND versao = $2', [id, versao]);
+  const [u] = await sql<Pessoa>('SELECT id, nome, email, perfil FROM usuarios WHERE id = $1 AND ativo AND versao = $2', [id, versao]);
   return u ?? null;
 });
 
+// Usuário do painel (admin ou super admin). O líder de grupo nunca passa por aqui:
+// é esta função que protege as telas, as ações e as rotas do painel.
+export async function usuarioAtual(): Promise<Usuario | null> {
+  const p = await pessoaAtual();
+  return p && p.perfil !== 'lider' ? { ...p, perfil: p.perfil } : null;
+}
+
+// Para onde a pessoa vai depois de entrar
+export const inicioDe = (p: Pick<Pessoa, 'perfil'>) => (p.perfil === 'lider' ? '/lider' : '/admin');
+
 export async function exigirUsuario(): Promise<Usuario> {
   const u = await usuarioAtual();
-  if (!u) redirect('/admin/login');
-  return u;
+  if (u) return u;
+  // O líder que tentar abrir o painel volta para a área dele
+  redirect((await pessoaAtual()) ? '/lider' : '/admin/login');
+}
+
+// Área do líder: qualquer pessoa com sessão (o admin também pode liderar um grupo).
+export async function exigirPessoa(): Promise<Pessoa> {
+  const p = await pessoaAtual();
+  if (!p) redirect('/admin/login');
+  return p;
 }
 
 export async function exigirSuperAdmin(): Promise<Usuario> {

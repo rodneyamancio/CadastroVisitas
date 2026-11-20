@@ -8,7 +8,9 @@ import CamposDaVisita, { VISITA_VAZIA } from "../CamposDaVisita";
 const telefone = (t: string) =>
   t.length === 11 ? `(${t.slice(0, 2)}) ${t.slice(2, 7)}-${t.slice(7)}` : t.length === 10 ? `(${t.slice(0, 2)}) ${t.slice(2, 6)}-${t.slice(6)}` : t;
 
-function Formulario({ recomecar }: { recomecar: () => void }) {
+type Grupos = { valor: string; nome: string }[];
+
+function Formulario({ recomecar, grupos }: { recomecar: () => void; grupos: Grupos }) {
   const [estado, acao, pendente] = useActionState(cadastrarVisita, undefined);
   const valores = estado?.valores ?? VISITA_VAZIA;
   const parecidas = estado?.parecidas ?? [];
@@ -18,7 +20,7 @@ function Formulario({ recomecar }: { recomecar: () => void }) {
       {estado?.criada && (
         <div className="rounded-lg bg-emerald-50 p-3 text-sm text-emerald-950" role="status">
           <p className="font-semibold">
-            Cadastro nº {estado.criada.id} gravado: {estado.criada.nome} · {estado.criada.visita}.
+            Cadastro nº {estado.criada.id} gravado: {estado.criada.nome} · {estado.criada.visita} · {estado.criada.grupo ?? "ainda sem grupo"}.
           </p>
           <p className="mt-1">
             O bairro, a posição no mapa e a duplicidade são conferidos em seguida.{" "}
@@ -36,7 +38,7 @@ function Formulario({ recomecar }: { recomecar: () => void }) {
       ))}
 
       {/* A chave recria os campos: com erro, voltam com o que foi digitado; depois de gravar, vazios */}
-      <CamposDaVisita key={`${estado?.criada?.id ?? 0}-${JSON.stringify(valores)}`} v={valores} erros={estado?.erros ?? {}} novo />
+      <CamposDaVisita key={`${estado?.criada?.id ?? 0}-${JSON.stringify(valores)}`} v={valores} erros={estado?.erros ?? {}} novo grupos={grupos} />
 
       {estado?.erro && !parecidas.length && (
         <p className="rounded-lg bg-red-50 p-3 text-sm font-semibold text-red-800" role="alert">
@@ -82,8 +84,8 @@ function Formulario({ recomecar }: { recomecar: () => void }) {
   );
 }
 
-export default function FormularioNovaVisita() {
+export default function FormularioNovaVisita({ grupos }: { grupos: Grupos }) {
   // "É a mesma família": recomeça o formulário do zero
   const [rodada, setRodada] = useState(0);
-  return <Formulario key={rodada} recomecar={() => setRodada((r) => r + 1)} />;
+  return <Formulario key={rodada} recomecar={() => setRodada((r) => r + 1)} grupos={grupos} />;
 }

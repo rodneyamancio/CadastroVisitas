@@ -161,6 +161,21 @@ export const emails = {
       }),
     };
   },
+  conviteLider(nome: string, link: string, validade: string, quemConvidou: string) {
+    return {
+      assunto: 'Seu acesso de líder de grupo na Missão Fraternal',
+      ...montarEmail({
+        previa: 'Falta só um passo: crie a sua senha para ver as visitas do seu grupo.',
+        titulo: `Que bom ter você com a gente, ${primeiroNome(nome)}!`,
+        paragrafos: [
+          `${quemConvidou} cadastrou você como líder de grupo da Missão Fraternal. Pelo celular você vai ver as famílias que o seu grupo visita nos dias 28 e 29 de novembro, marcar as visitas feitas e escrever comentários.`,
+          'Para começar, falta só um passo: criar a sua senha. Leva menos de um minuto.',
+        ],
+        botao: { texto: 'Criar minha senha', url: link },
+        nota: `Por segurança, este link vale por ${validade} e só pode ser usado uma vez. Se ele vencer, é só pedir um novo para a coordenação.`,
+      }),
+    };
+  },
   redefinicao(nome: string, link: string, validade: string) {
     return {
       assunto: 'Crie uma nova senha para o painel da Missão Fraternal',

@@ -1,13 +1,14 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { usuarioAtual } from '@/lib/auth';
+import { inicioDe, pessoaAtual } from '@/lib/auth';
 import { SUBTITULO } from '@/lib/config';
 import FormularioCadastro from './FormularioCadastro';
 
 export const metadata = { title: 'Pedir acesso - Painel' };
 
 export default async function Cadastro() {
-  if (await usuarioAtual()) redirect('/admin');
+  const eu = await pessoaAtual();
+  if (eu) redirect(inicioDe(eu));
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-sm flex-col justify-center px-4 py-10">
       <div className="cartao">

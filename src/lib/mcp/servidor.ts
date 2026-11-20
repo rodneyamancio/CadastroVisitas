@@ -18,6 +18,7 @@ import { gravarVisita, processarNovaVisita, validarNovaVisita } from '../criacao
 import { sql } from '../db';
 import { listarDuplicidades, parecidasCom } from '../duplicidade';
 import { editarVisita, type Edicao } from '../edicao';
+import { listarGrupos, resumoDosGrupos } from '../grupos';
 import { PERIODOS_SITE, estatisticasDoSite } from '../estatisticas';
 import { aprovarPedidoDeAcesso, pedidosPendentes, recusarPedidoDeAcesso } from '../pedidos';
 import { ultimoRoteiro } from '../roteiro';
@@ -74,6 +75,11 @@ function visitaParaMcp(v: Visita, superAdmin: boolean) {
     entrar_em_contato_antes_para_confirmar: v.confirmar_contato == null ? 'não informado' : v.confirmar_contato ? 'sim' : 'não',
     // A equipe já ligou e confirmou a visita com a família?
     visita_confirmada_por_telefone: v.confirmada_em ? { confirmada: true, em: quando(v.confirmada_em), por: v.confirmada_por } : { confirmada: false },
+    // Grupo que vai fazer a visita (os nomes estão em "listar_grupos") e o que aconteceu no dia
+    grupo_id: v.grupo_id,
+    visita_feita: v.feita_em ? { feita: true, em: quando(v.feita_em), por: v.feita_por } : { feita: false },
+    comentario_do_lider: v.comentario,
+    lancada_pelo_lider_no_dia: v.lancada_por,
     cadastrado_em: quando(v.criado_em),
     portal_oficial: v.migrado_em ? { migrado: true, em: quando(v.migrado_em), por: v.migrado_por } : { migrado: false },
     posicao_no_mapa: temPonto ? { lat: v.lat, lng: v.lng, precisao: PRECISOES[v.precisao ?? ''] ?? v.precisao } : null,
@@ -870,6 +876,38 @@ export function criarServidor(dono: DonoDoToken, assinaturas: Set<string>): McpS
   );
 
   servidor.registerTool(
+    'listar_grupos',
+    {
+      title: 'Grupos de visita',
+      description:
+        'Lista os grupos que saem para fazer as visitas: nome, líder, quantas visitas tem em cada dia e horário, quantas já foram feitas e quantas foram lançadas pelo líder no dia. Informa também quantas visitas ainda estão sem grupo. Cada visita traz o "grupo_id" correspondente.',
+      annotations: { title: 'Grupos de visita', ...leitura },
+    },
+    async () => {
+      const [grupos, resumo] = await Promise.all([listarGrupos(), resumoDosGrupos()]);
+      await anotar('listar_grupos', { grupos: grupos.length });
+      return texto(
+        {
+          grupos: grupos.map((g) => ({
+            id: g.id,
+            nome: g.nome,
+            lider: g.lider_nome,
+            observacao: g.observacao,
+            visitas: g.total,
+            feitas: g.feitas,
+            lancadas_pelo_lider: g.lancadas,
+            por_dia_e_horario: Object.fromEntries(Object.entries(g.partes).map(([chave, n]) => [chave.split('|').map((p, i) => (i ? nomePeriodo(p) : nomeDia(p))).join(' · '), n])),
+          })),
+          visitas_sem_grupo: resumo.semGrupo,
+          visitas_feitas: resumo.feitas,
+          total_de_visitas: resumo.visitas,
+        },
+        `${grupos.length} ${grupos.length === 1 ? 'grupo' : 'grupos'}; ${resumo.semGrupo} ${resumo.semGrupo === 1 ? 'visita' : 'visitas'} sem grupo; ${resumo.feitas} de ${resumo.visitas} feitas.`,
+      );
+    },
+  );
+
+  servidor.registerTool(
     'possiveis_duplicidades',
     {
       title: 'Possíveis duplicidades',
@@ -981,7 +1019,7 @@ export function criarServidor(dono: DonoDoToken, assinaturas: Set<string>): McpS
             id: u.id,
             nome: u.nome,
             email: u.email,
-            perfil: u.perfil === 'super_admin' ? 'Super admin' : 'Admin',
+            perfil: u.perfil === 'super_admin' ? 'Super admin' : u.perfil === 'lider' ? 'Líder de grupo (não entra no painel)' : 'Admin',
             situacao: u.aguardando_aprovacao ? 'aguardando aprovação' : !u.ativo ? 'desativado' : u.senha_pendente ? 'convite pendente (ainda não criou a senha)' : 'ativo',
             cadastrado_em: quando(u.criado_em),
           })),

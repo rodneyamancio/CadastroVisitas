@@ -25,7 +25,7 @@ export async function lerTokenMcp(token: string): Promise<DonoDoToken | null> {
   const [t] = await sql<DonoDoToken & { ultimo_uso: Date | null }>(
     `SELECT t.id AS "tokenId", t.nome AS "nomeDoToken", t.ultimo_uso, u.id, u.nome, u.email, u.perfil
      FROM tokens_mcp t JOIN usuarios u ON u.id = t.usuario_id
-     WHERE t.hash = $1 AND u.ativo AND NOT u.aguardando_aprovacao`,
+     WHERE t.hash = $1 AND u.ativo AND NOT u.aguardando_aprovacao AND u.perfil <> 'lider'`,
     [resumo(token)],
   );
   if (!t) return null;

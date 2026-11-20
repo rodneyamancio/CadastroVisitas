@@ -4,7 +4,7 @@ import { randomBytes } from 'node:crypto';
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { registrar } from '@/lib/auditoria';
-import { criarSessao, encerrarSessao, exigirSuperAdmin, exigirUsuario, ipDoCliente, urlBase, usuarioAtual } from '@/lib/auth';
+import { criarSessao, encerrarSessao, exigirSuperAdmin, exigirUsuario, ipDoCliente, pessoaAtual, urlBase } from '@/lib/auth';
 import { nomeDia, nomePeriodo } from '@/lib/config';
 import type { DadosDaVisita } from './(painel)/visitas/CamposDaVisita';
 import { MODELOS_ANTHROPIC, configuracaoIA, gravar, gravarChaveApi, iaPronta, type Provedor } from '@/lib/configuracoes';
@@ -13,6 +13,7 @@ import { gravarVisita, processarNovaVisita, validarNovaVisita } from '@/lib/cria
 import { parecidasCom, reconferirDuplicidades, resolverDuplicidade } from '@/lib/duplicidade';
 import { editarVisita, type Mudanca } from '@/lib/edicao';
 import { ErroEmail, emailPronto, emails, enviarEmail } from '@/lib/email';
+import { colocarNoGrupo } from '@/lib/grupos';
 import { ErroIA, testarConexao } from '@/lib/ia';
 import { dentroDoLimite } from '@/lib/limite';
 import { aprovarPedidoDeAcesso, recusarPedidoDeAcesso } from '@/lib/pedidos';
@@ -51,12 +52,13 @@ export async function entrar(_anterior: Retorno, fd: FormData): Promise<Retorno>
     return { erro: 'E-mail ou senha incorretos.', valores: { email } };
   }
   await criarSessao(u.id, u.versao);
-  await registrar('login.ok', u);
-  redirect('/admin');
+  await registrar('login.ok', u, null, u.perfil === 'lider' ? { perfil: 'Líder de grupo' } : undefined);
+  // O líder de grupo vai direto para as visitas dele; não entra no painel
+  redirect(u.perfil === 'lider' ? '/lider' : '/admin');
 }
 
 export async function sair(): Promise<void> {
-  const u = await usuarioAtual();
+  const u = await pessoaAtual();
   if (u) await registrar('login.saiu', u);
   await encerrarSessao();
   redirect('/admin/login');
@@ -92,7 +94,17 @@ function valoresDaVisita(fd: FormData): DadosDaVisita {
     data_visita: campo(fd, 'data_visita'),
     periodo: campo(fd, 'periodo'),
     confirmar: confirmar === 'sim' || confirmar === 'nao' || confirmar === 'ni' ? confirmar : '',
+    grupo: campo(fd, 'grupo'),
   };
+}
+
+// Grupo escolhido no formulário: "" = sem grupo. Devolve "invalido" se o grupo não existe mais.
+async function grupoEscolhido(valor: string | undefined): Promise<{ id: number; nome: string } | null | 'invalido'> {
+  if (!valor) return null;
+  const id = Number(valor);
+  if (!Number.isInteger(id) || id < 1) return 'invalido';
+  const [g] = await sql<{ id: number; nome: string }>('SELECT id, nome FROM grupos WHERE id = $1', [id]);
+  return g ?? 'invalido';
 }
 
 export type RetornoEdicao = { erro?: string; erros?: Record<string, string>; ok?: string; mudancas?: Mudanca[]; valores?: DadosDaVisita } | undefined;
@@ -101,6 +113,10 @@ export type RetornoEdicao = { erro?: string; erros?: Record<string, string>; ok?
 export async function salvarVisita(id: number, _anterior: RetornoEdicao, fd: FormData): Promise<RetornoEdicao> {
   const eu = await exigirUsuario();
   const valores = valoresDaVisita(fd);
+  // O campo do grupo só vem da tela de editar (quem não manda o campo não mexe no grupo)
+  const mexeNoGrupo = fd.has('grupo');
+  const grupo = mexeNoGrupo ? await grupoEscolhido(valores.grupo) : null;
+  if (grupo === 'invalido') return { erro: 'Confira os campos destacados.', erros: { grupo: 'Este grupo não existe mais. Escolha outro.' }, valores };
   const r = await editarVisita(
     id,
     {
@@ -120,14 +136,22 @@ export async function salvarVisita(id: number, _anterior: RetornoEdicao, fd: For
     'painel',
   );
   if ('erro' in r) return { erro: r.erro, erros: r.erros, valores };
-  if (!r.mudancas.length) return { ok: 'Nada foi alterado: os dados já estavam assim.' };
+  const mudancas = [...r.mudancas];
+  if (mexeNoGrupo && (grupo?.id ?? null) !== r.visita.grupo_id) {
+    const [antes] = r.visita.grupo_id ? await sql<{ nome: string }>('SELECT nome FROM grupos WHERE id = $1', [r.visita.grupo_id]) : [];
+    await colocarNoGrupo([{ id, grupo: grupo?.id ?? null }]);
+    const mudanca = { campo: 'Grupo', antes: antes?.nome ?? 'Sem grupo', depois: grupo?.nome ?? 'Sem grupo' };
+    mudancas.push(mudanca);
+    await registrar('visita.grupo', eu, `Nº ${r.visita.id} · ${r.visita.responsavel}`, { de: mudanca.antes, para: mudanca.depois });
+  }
+  if (!mudancas.length) return { ok: 'Nada foi alterado: os dados já estavam assim.' };
   revalidatePath('/admin', 'layout');
-  return { ok: 'Alterações salvas.', mudancas: r.mudancas };
+  return { ok: 'Alterações salvas.', mudancas };
 }
 
 export type CadastroParecido = { id: number; responsavel: string; telefone: string; endereco: string; visita: string; motivos: string[] };
 export type RetornoCadastro =
-  | { erro?: string; erros?: Record<string, string>; parecidas?: CadastroParecido[]; ignoradas?: number[]; valores?: DadosDaVisita; criada?: { id: number; nome: string; visita: string } }
+  | { erro?: string; erros?: Record<string, string>; parecidas?: CadastroParecido[]; ignoradas?: number[]; valores?: DadosDaVisita; criada?: { id: number; nome: string; visita: string; grupo: string | null } }
   | undefined;
 
 // Os nomes dos campos do formulário público são outros
@@ -153,6 +177,8 @@ export async function cadastrarVisita(_anterior: RetornoCadastro, fd: FormData):
   const errosDoPainel = Object.fromEntries(Object.entries(erros).map(([k, v]) => [CAMPO_DO_PAINEL[k] ?? k, v]));
   if (!valores.confirmar) errosDoPainel.confirmar = 'Escolha se é preciso entrar em contato antes.';
   if (dados.cep && dados.cep.replace(/\D/g, '').length !== 8) errosDoPainel.cep = 'O CEP tem 8 números.';
+  const grupo = await grupoEscolhido(valores.grupo);
+  if (grupo === 'invalido') errosDoPainel.grupo = 'Este grupo não existe mais. Escolha outro.';
   // Cadastros parecidos que a pessoa já disse serem de outra família (voltam ao formulário em toda resposta)
   const ignorar = new Set(fd.getAll('ignorar').flatMap((v) => String(v).split(',')).map(Number).filter((n) => Number.isInteger(n) && n > 0));
   if (Object.keys(errosDoPainel).length) return { erro: 'Confira os campos destacados.', erros: errosDoPainel, valores, ignoradas: [...ignorar] };
@@ -185,7 +211,9 @@ export async function cadastrarVisita(_anterior: RetornoCadastro, fd: FormData):
   }
 
   const nova = await gravarVisita(dados, { lat: null, lng: null, precisao: null, ip: null, agente: null, extra: { aparelho: `Cadastrado no painel por ${eu.nome}` } });
+  if (grupo && grupo !== 'invalido') await colocarNoGrupo([{ id: nova.id, grupo: grupo.id }]);
   await registrar('visita.criada.painel', eu, `Nº ${nova.id} · ${nova.responsavel}`, {
+    grupo: grupo && grupo !== 'invalido' ? grupo.nome : 'sem grupo',
     endereço: `${nova.endereco}, ${nova.numero}`,
     visita: `${nomeDia(nova.data_visita)} · ${nomePeriodo(nova.periodo)}`,
     'confirmar antes': nova.confirmar_contato == null ? 'não informado' : nova.confirmar_contato ? 'sim' : 'não',
@@ -194,7 +222,14 @@ export async function cadastrarVisita(_anterior: RetornoCadastro, fd: FormData):
   // Bairro pelos Correios (o digitado é respeitado), aviso no MCP, mapa e duplicidade com a IA
   void processarNovaVisita(nova.id, false, null);
   revalidatePath('/admin', 'layout');
-  return { criada: { id: nova.id, nome: nova.responsavel, visita: `${nomeDia(nova.data_visita)} · ${nomePeriodo(nova.periodo)}` } };
+  return {
+    criada: {
+      id: nova.id,
+      nome: nova.responsavel,
+      visita: `${nomeDia(nova.data_visita)} · ${nomePeriodo(nova.periodo)}`,
+      grupo: grupo && grupo !== 'invalido' ? grupo.nome : null,
+    },
+  };
 }
 
 // Controle do que já foi passado para o portal oficial.
@@ -370,7 +405,8 @@ export async function mudarPerfil(id: number, fd: FormData): Promise<void> {
   if (id === eu.id) voltar('proprio');
   if (perfil !== 'admin' && perfil !== 'super_admin') voltar('invalido');
   const antes = await buscarUsuario(id);
-  if (antes && antes.perfil !== perfil) {
+  // Líder de grupo não vira admin por aqui (é cuidado em Grupos → Líderes)
+  if (antes && antes.perfil !== 'lider' && antes.perfil !== perfil) {
     await sql('UPDATE usuarios SET perfil = $2 WHERE id = $1', [id, perfil]);
     await registrar('usuario.perfil', eu, `${antes.nome} <${antes.email}>`, { de: nomePerfil(antes.perfil), para: nomePerfil(perfil) });
   }

@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { exigirUsuario } from '@/lib/auth';
 import { sql } from '@/lib/db';
 import { totalDeDuplicidades } from '@/lib/duplicidade';
+import { resumoDosGrupos } from '@/lib/grupos';
 import { sair } from '../acoes';
 
 export const dynamic = 'force-dynamic';
@@ -10,10 +11,12 @@ export const metadata = { title: 'Painel de visitas' };
 export default async function PainelLayout({ children }: { children: React.ReactNode }) {
   const usuario = await exigirUsuario();
   const pedidos = usuario.perfil === 'super_admin' ? (await sql<{ n: number }>('SELECT count(*)::int AS n FROM usuarios WHERE aguardando_aprovacao'))[0].n : 0;
-  const duplicidades = await totalDeDuplicidades();
+  const [duplicidades, grupos] = await Promise.all([totalDeDuplicidades(), resumoDosGrupos()]);
   const links: { href: string; nome: string; aviso?: number; sobre?: string }[] = [
     { href: '/admin', nome: 'Visitas' },
     { href: '/admin/lista-geral', nome: 'Lista geral' },
+    // Depois que existem grupos, avisa quantas visitas ainda estão sem grupo
+    { href: '/admin/grupos', nome: 'Grupos', aviso: grupos.grupos ? grupos.semGrupo : 0, sobre: 'Visitas ainda sem grupo' },
     { href: '/admin/duplicidades', nome: 'Duplicidades', aviso: duplicidades, sobre: 'Possíveis duplicidades para conferir' },
     { href: '/admin/mapa', nome: 'Mapa de calor' },
     { href: '/admin/site', nome: 'Site' },

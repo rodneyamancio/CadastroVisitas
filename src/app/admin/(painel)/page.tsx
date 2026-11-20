@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { exigirUsuario } from '@/lib/auth';
 import { DIAS, PERIODOS, PRECISOES, nomeDia, nomePeriodo } from '@/lib/config';
 import { suspeitasPorVisita } from '@/lib/duplicidade';
+import { opcoesDeGrupo } from '@/lib/grupos';
 import { enderecoCompleto, filtrosParaUrl, lerFiltros, listarVisitas, resumoVisitas, type Visita } from '@/lib/visitas';
 import BotaoBairros from './BotaoBairros';
 import BotaoExcluir from './BotaoExcluir';
@@ -73,7 +74,8 @@ export default async function Painel({ searchParams }: { searchParams: Promise<R
   const superAdmin = usuario.perfil === 'super_admin';
   const visao: Visao = (await cookies()).get('visao')?.value === 'tabela' ? 'tabela' : 'cards';
   const filtros = lerFiltros(await searchParams);
-  const [visitas, resumo, suspeitas] = await Promise.all([listarVisitas(filtros), resumoVisitas(), suspeitasPorVisita()]);
+  const [visitas, resumo, suspeitas, grupos] = await Promise.all([listarVisitas(filtros), resumoVisitas(), suspeitasPorVisita(), opcoesDeGrupo()]);
+  const nomeDoGrupo = new Map(grupos.map((g) => [g.id, g.nome]));
   const paresSuspeitos = new Set([...suspeitas.values()].flat().map((s) => s.par)).size;
   const consulta = filtrosParaUrl(filtros);
   const filtrando = Boolean(consulta);
@@ -104,6 +106,9 @@ export default async function Painel({ searchParams }: { searchParams: Promise<R
           detalheConfirmada: detalheDaConfirmacao(v),
           linkMapa: linkMapa(v),
           duplicidades: (suspeitas.get(v.id) ?? []).map((s) => ({ par: s.par, texto: `Nº ${s.id} · ${s.responsavel}` })),
+          grupo: v.grupo_id ? { id: v.grupo_id, nome: nomeDoGrupo.get(v.grupo_id) ?? `Grupo ${v.grupo_id}` } : undefined,
+          feita: v.feita_em != null,
+          lancada: v.lancada_por != null,
           ...(superAdmin ? { ip: v.ip ?? '', aparelho: v.extra?.aparelho ?? '' } : {}),
         }));
 
@@ -197,7 +202,7 @@ export default async function Painel({ searchParams }: { searchParams: Promise<R
       )}
 
       <section className="rounded-xl border border-stone-200 bg-white p-4">
-        <form method="get" className="grid gap-3 sm:grid-cols-2 sm:items-end lg:grid-cols-3 xl:grid-cols-[minmax(14rem,1fr)_auto_auto_auto_auto_auto]">
+        <form method="get" className="grid gap-3 sm:grid-cols-2 sm:items-end lg:grid-cols-3 xl:grid-cols-[minmax(12rem,1fr)_auto_auto_auto_auto_auto_auto]">
           <div>
             <label htmlFor="q" className="mb-1 block text-sm font-semibold text-stone-700">
               Buscar
@@ -251,6 +256,22 @@ export default async function Painel({ searchParams }: { searchParams: Promise<R
               <option value="sim">Já confirmadas</option>
             </select>
           </div>
+          {grupos.length > 0 && (
+            <div>
+              <label htmlFor="grupo" className="mb-1 block text-sm font-semibold text-stone-700">
+                Grupo
+              </label>
+              <select id="grupo" name="grupo" defaultValue={filtros.grupo ?? ''} className="adm-campo xl:max-w-44">
+                <option value="">Todos</option>
+                <option value="sem">Sem grupo</option>
+                {grupos.map((g) => (
+                  <option key={g.id} value={g.id}>
+                    {g.nome}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
           <div className="flex gap-2">
             <button type="submit" className="adm-botao">
               Filtrar
@@ -317,6 +338,19 @@ export default async function Painel({ searchParams }: { searchParams: Promise<R
                     </Link>
                   </p>
                 ))}
+                {(grupos.length > 0 || v.feita_em || v.lancada_por) && (
+                  <p className="mt-2 flex flex-wrap gap-1.5 text-sm font-semibold">
+                    {v.grupo_id ? (
+                      <Link href={`/admin/grupos/${v.grupo_id}`} className="rounded-full bg-stone-100 px-3 py-1 text-stone-800 underline">
+                        {nomeDoGrupo.get(v.grupo_id) ?? `Grupo ${v.grupo_id}`}
+                      </Link>
+                    ) : (
+                      grupos.length > 0 && <span className="rounded-full bg-amber-100 px-3 py-1 text-amber-900">Sem grupo</span>
+                    )}
+                    {v.feita_em && <span className="rounded-full bg-emerald-700 px-3 py-1 text-white">Visita feita</span>}
+                    {v.lancada_por && <span className="rounded-full bg-sky-100 px-3 py-1 text-sky-900">Lançada pelo líder</span>}
+                  </p>
+                )}
                 {v.confirmar_contato != null && (
                   <p className="mt-2 text-sm">
                     {v.confirmar_contato ? (

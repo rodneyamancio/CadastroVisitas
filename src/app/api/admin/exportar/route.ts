@@ -3,6 +3,7 @@ import { registrar } from '@/lib/auditoria';
 import { usuarioAtual } from '@/lib/auth';
 import { PRECISOES, nomeDia, nomePeriodo } from '@/lib/config';
 import { suspeitasPorVisita } from '@/lib/duplicidade';
+import { opcoesDeGrupo } from '@/lib/grupos';
 import { lerFiltros, listarVisitas } from '@/lib/visitas';
 
 export const dynamic = 'force-dynamic';
@@ -15,7 +16,8 @@ export async function GET(req: Request) {
   const superAdmin = usuario.perfil === 'super_admin';
 
   const filtros = lerFiltros(Object.fromEntries(new URL(req.url).searchParams));
-  const [visitas, suspeitas] = await Promise.all([listarVisitas(filtros), suspeitasPorVisita()]);
+  const [visitas, suspeitas, grupos] = await Promise.all([listarVisitas(filtros), suspeitasPorVisita(), opcoesDeGrupo()]);
+  const grupoPorId = new Map(grupos.map((g) => [g.id, g]));
 
   const livro = new ExcelJS.Workbook();
   const aba = livro.addWorksheet('Visitas', { views: [{ state: 'frozen', ySplit: 1 }] });
@@ -44,6 +46,14 @@ export async function GET(req: Request) {
     { header: 'Ligou e confirmou', key: 'confirmada', width: 18 },
     { header: 'Confirmada em', key: 'confirmada_quando', width: 18 },
     { header: 'Confirmada por', key: 'confirmada_quem', width: 24 },
+    { header: 'Grupo', key: 'grupo', width: 26 },
+    { header: 'Líder do grupo', key: 'lider', width: 24 },
+    { header: 'Ordem no trajeto', key: 'ordem', width: 10 },
+    { header: 'Visita feita', key: 'feita', width: 12 },
+    { header: 'Feita em', key: 'feita_quando', width: 18 },
+    { header: 'Feita por', key: 'feita_quem', width: 24 },
+    { header: 'Lançada pelo líder', key: 'lancada', width: 24 },
+    { header: 'Comentário do líder', key: 'comentario', width: 40 },
     { header: 'Possível duplicidade com', key: 'duplicidade', width: 36 },
     // Dados de quem preencheu: só na planilha do super admin
     ...(superAdmin
@@ -72,6 +82,14 @@ export async function GET(req: Request) {
       confirmada: v.confirmada_em ? 'Confirmada' : v.confirmar_contato ? 'Falta confirmar' : 'Não confirmada',
       confirmada_quando: v.confirmada_em ? quando.format(v.confirmada_em) : '',
       confirmada_quem: v.confirmada_por ?? '',
+      grupo: v.grupo_id ? (grupoPorId.get(v.grupo_id)?.nome ?? '') : '',
+      lider: v.grupo_id ? (grupoPorId.get(v.grupo_id)?.lider ?? '') : '',
+      ordem: v.ordem ?? '',
+      feita: v.feita_em ? 'Feita' : 'A fazer',
+      feita_quando: v.feita_em ? quando.format(v.feita_em) : '',
+      feita_quem: v.feita_por ?? '',
+      lancada: v.lancada_por ?? '',
+      comentario: v.comentario ?? '',
       duplicidade: (suspeitas.get(v.id) ?? []).map((s) => `Nº ${s.id} · ${s.responsavel}`).join('; '),
       aparelho: v.extra?.aparelho ?? '',
       tempo: v.extra?.tempoS ?? '',

@@ -18,6 +18,8 @@ export type DadosDaVisita = {
   confirmar: "" | "sim" | "nao" | "ni";
   // Só no cadastro sem visita: por que a família não vai receber visita neste evento
   motivo?: string;
+  // Grupo que vai fazer a visita: "" = ainda sem grupo
+  grupo?: string;
 };
 
 export const VISITA_VAZIA: DadosDaVisita = {
@@ -116,11 +118,14 @@ export default function CamposDaVisita({
   erros,
   novo = false,
   semVisita = false,
+  grupos,
 }: {
   v: DadosDaVisita;
   erros: Record<string, string>;
   novo?: boolean;
   semVisita?: boolean;
+  // Grupos para escolher (quando vem, aparece o campo "Grupo")
+  grupos?: { valor: string; nome: string }[];
 }) {
   const escolha = novo ? [{ valor: "", nome: "Escolha…" }] : [];
   return (
@@ -181,6 +186,18 @@ export default function CamposDaVisita({
             { valor: novo ? "ni" : "", nome: "Não informado" },
           ]}
         />
+        {grupos && (
+          <div className="sm:col-span-3">
+            <Escolha
+              nome="grupo"
+              rotulo="Grupo que vai fazer a visita"
+              valor={v.grupo ?? ""}
+              erro={erros.grupo}
+              opcoes={[{ valor: "", nome: grupos.length ? "Ainda sem grupo (distribuir depois)" : "Ainda sem grupo (nenhum grupo foi criado)" }, ...grupos]}
+            />
+            {!erros.grupo && <p className="mt-1 text-xs text-stone-500">As visitas sem grupo ficam em Grupos → Distribuir visitas.</p>}
+          </div>
+        )}
       </fieldset>
       )}
     </div>

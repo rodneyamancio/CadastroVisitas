@@ -31,6 +31,10 @@ export type LinhaVisita = {
   linkMapa: string;
   // Outros cadastros que podem ser da mesma família
   duplicidades: { par: number; texto: string }[];
+  // Grupo que vai fazer a visita, se a visita foi feita e se foi lançada pelo líder no dia
+  grupo?: { id: number; nome: string };
+  feita: boolean;
+  lancada: boolean;
   ip?: string;
   aparelho?: string;
 };
@@ -80,6 +84,8 @@ const GRUPOS: { id: string; nome: string; soSuperAdmin?: boolean; chave: (l: Lin
   { id: 'diaPeriodo', nome: 'Dia e horário', chave: (l) => `${l.dataVisita}|${l.periodo}`, rotulo: (l) => `${l.dia} · ${l.periodoNome}` },
   { id: 'confirmar', nome: 'Confirmar antes', chave: (l) => String(ordemConfirmar(l)), rotulo: (l) => `Confirmar antes: ${textoConfirmar(l)}` },
   { id: 'confirmada', nome: 'Ligou e confirmou', chave: (l) => String(ordemConfirmada(l)), rotulo: (l) => textoConfirmada(l) },
+  { id: 'grupo', nome: 'Grupo', chave: (l) => (l.grupo ? `0${limpo(l.grupo.nome)}` : '1'), rotulo: (l) => l.grupo?.nome ?? 'Sem grupo' },
+  { id: 'feita', nome: 'Visita feita', chave: (l) => (l.feita ? '1' : '0'), rotulo: (l) => (l.feita ? 'Visitas feitas' : 'Visitas a fazer') },
   { id: 'duplicidade', nome: 'Possível duplicidade', chave: (l) => (l.duplicidades.length ? '0' : '1'), rotulo: (l) => (l.duplicidades.length ? 'Com possível duplicidade' : 'Sem duplicidade apontada') },
   { id: 'criado', nome: 'Data do cadastro', chave: (l) => l.criadoDia, rotulo: (l) => `Cadastradas em ${dataCurta(l.criadoDia)}` },
   { id: 'ip', nome: 'IP de quem cadastrou', soSuperAdmin: true, chave: (l) => (l.ip ? `0${l.ip}` : '1'), rotulo: (l) => (l.ip ? `${l.ip}${l.aparelho ? ` · ${l.aparelho}` : ''}` : 'Sem IP') },
@@ -229,6 +235,17 @@ export default function TabelaVisitas({ linhas, superAdmin }: { linhas: LinhaVis
       </td>
       <td className="min-w-32 px-2 py-2.5 font-semibold text-stone-900">
         {l.responsavel}
+        {(l.grupo || l.feita || l.lancada) && (
+          <span className="mt-0.5 flex flex-wrap gap-1 text-xs font-semibold">
+            {l.grupo && (
+              <Link href={`/admin/grupos/${l.grupo.id}`} className="rounded-full bg-stone-100 px-2 py-0.5 text-stone-700 underline">
+                {l.grupo.nome}
+              </Link>
+            )}
+            {l.feita && <span className="rounded-full bg-emerald-700 px-2 py-0.5 text-white">Feita</span>}
+            {l.lancada && <span className="rounded-full bg-sky-100 px-2 py-0.5 text-sky-900">Lançada pelo líder</span>}
+          </span>
+        )}
         {l.duplicidades.map((d) => (
           <Link key={d.par} href={`/admin/duplicidades#par-${d.par}`} className="mt-0.5 block text-xs font-semibold text-amber-800 underline">
             Possível duplicidade: {d.texto}

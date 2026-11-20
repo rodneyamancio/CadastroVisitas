@@ -18,7 +18,7 @@ CREATE TABLE IF NOT EXISTS usuarios (
   nome TEXT NOT NULL,
   email TEXT NOT NULL UNIQUE,
   senha_hash TEXT NOT NULL,
-  perfil TEXT NOT NULL CHECK (perfil IN ('super_admin', 'admin')),
+  perfil TEXT NOT NULL CHECK (perfil IN ('super_admin', 'admin', 'lider')),
   ativo BOOLEAN NOT NULL DEFAULT TRUE,
   criado_em TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -163,6 +163,34 @@ CREATE TABLE IF NOT EXISTS tokens_mcp (
   visto_visita INT NOT NULL DEFAULT 0,
   visto_usuario INT NOT NULL DEFAULT 0
 );
+
+-- Líder de grupo: perfil que só enxerga as visitas do próprio grupo (área /lider), nada do painel
+ALTER TABLE usuarios DROP CONSTRAINT IF EXISTS usuarios_perfil_check;
+ALTER TABLE usuarios ADD CONSTRAINT usuarios_perfil_check CHECK (perfil IN ('super_admin', 'admin', 'lider'));
+ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS telefone TEXT;
+
+-- Grupos que saem para fazer as visitas. Cada grupo tem um líder (um usuário) e as visitas ficam
+-- ligadas ao grupo por visitas.grupo_id (nulo = ainda sem grupo).
+CREATE TABLE IF NOT EXISTS grupos (
+  id SERIAL PRIMARY KEY,
+  nome TEXT NOT NULL,
+  lider_id INT REFERENCES usuarios(id) ON DELETE SET NULL,
+  observacao TEXT,
+  criado_em TIMESTAMPTZ NOT NULL DEFAULT now(),
+  criado_por TEXT
+);
+ALTER TABLE visitas ADD COLUMN IF NOT EXISTS grupo_id INT REFERENCES grupos(id) ON DELETE SET NULL;
+-- Ordem da visita no trajeto do grupo (nulo = ainda sem ordem)
+ALTER TABLE visitas ADD COLUMN IF NOT EXISTS ordem INT;
+-- No dia: a visita foi feita (quando e quem marcou) e o comentário do líder
+ALTER TABLE visitas ADD COLUMN IF NOT EXISTS feita_em TIMESTAMPTZ;
+ALTER TABLE visitas ADD COLUMN IF NOT EXISTS feita_por TEXT;
+ALTER TABLE visitas ADD COLUMN IF NOT EXISTS comentario TEXT;
+ALTER TABLE visitas ADD COLUMN IF NOT EXISTS comentario_em TIMESTAMPTZ;
+ALTER TABLE visitas ADD COLUMN IF NOT EXISTS comentario_por TEXT;
+-- Visita que não estava na lista e foi lançada pelo líder no dia (nome de quem lançou)
+ALTER TABLE visitas ADD COLUMN IF NOT EXISTS lancada_por TEXT;
+CREATE INDEX IF NOT EXISTS visitas_grupo ON visitas (grupo_id);
 
 -- Roteiros montados pelo assistente de IA
 CREATE TABLE IF NOT EXISTS roteiros (

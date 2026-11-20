@@ -31,6 +31,17 @@ export type Visita = {
   confirmada_por: string | null;
   // Entrar em contato antes para confirmar a visita? (nulo = cadastro antigo, sem resposta)
   confirmar_contato: boolean | null;
+  // Grupo que vai fazer a visita (nulo = ainda sem grupo) e a ordem no trajeto do grupo
+  grupo_id: number | null;
+  ordem: number | null;
+  // No dia: a visita foi feita (quando e quem marcou) e o comentário do líder
+  feita_em: Date | null;
+  feita_por: string | null;
+  comentario: string | null;
+  comentario_em: Date | null;
+  comentario_por: string | null;
+  // Não estava na lista: foi lançada pelo líder no dia (nome de quem lançou)
+  lancada_por: string | null;
   ip: string | null;
   agente: string | null;
   extra: {
@@ -45,7 +56,8 @@ export type Visita = {
 };
 
 // confirmada: 'pendente' = a família pediu contato antes e ainda não foi confirmada; 'nao' = todas as não confirmadas
-export type Filtros = { q?: string; dia?: string; periodo?: string; portal?: 'falta' | 'migrado'; confirmada?: 'pendente' | 'nao' | 'sim' };
+// grupo: 'sem' = ainda sem grupo; número = visitas daquele grupo
+export type Filtros = { q?: string; dia?: string; periodo?: string; portal?: 'falta' | 'migrado'; confirmada?: 'pendente' | 'nao' | 'sim'; grupo?: string };
 
 export const FILTRO_CONFIRMADA = {
   pendente: 'confirmada_em IS NULL AND confirmar_contato IS TRUE',
@@ -59,12 +71,14 @@ export function lerFiltros(sp: Record<string, string | string[] | undefined>): F
   const periodo = um(sp.periodo);
   const portal = um(sp.portal);
   const confirmada = um(sp.confirmada);
+  const grupo = um(sp.grupo);
   return {
     q: um(sp.q).trim().slice(0, 100) || undefined,
     dia: DIAS.some((d) => d.valor === dia) ? dia : undefined,
     periodo: PERIODOS.some((p) => p.valor === periodo) ? periodo : undefined,
     portal: portal === 'falta' || portal === 'migrado' ? portal : undefined,
     confirmada: confirmada === 'pendente' || confirmada === 'nao' || confirmada === 'sim' ? confirmada : undefined,
+    grupo: grupo === 'sem' || /^[1-9]\d{0,8}$/.test(grupo) ? grupo : undefined,
   };
 }
 
@@ -75,6 +89,7 @@ export function filtrosParaUrl(f: Filtros): string {
   if (f.periodo) p.set('periodo', f.periodo);
   if (f.portal) p.set('portal', f.portal);
   if (f.confirmada) p.set('confirmada', f.confirmada);
+  if (f.grupo) p.set('grupo', f.grupo);
   return p.toString();
 }
 
@@ -91,6 +106,11 @@ export async function listarVisitas(f: Filtros = {}): Promise<Visita[]> {
   }
   if (f.portal) onde.push(f.portal === 'migrado' ? 'migrado_em IS NOT NULL' : 'migrado_em IS NULL');
   if (f.confirmada) onde.push(FILTRO_CONFIRMADA[f.confirmada]);
+  if (f.grupo === 'sem') onde.push('grupo_id IS NULL');
+  else if (f.grupo) {
+    params.push(Number(f.grupo));
+    onde.push(`grupo_id = $${params.length}`);
+  }
   if (f.q) {
     params.push(`%${f.q.replace(/[%_\\]/g, '\\$&')}%`);
     const n = params.length;

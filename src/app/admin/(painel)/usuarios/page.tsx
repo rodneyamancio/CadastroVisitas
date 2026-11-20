@@ -36,7 +36,8 @@ export default async function Usuarios({ searchParams }: { searchParams: Promise
   const sp = await searchParams;
   const aviso = typeof sp.aviso === 'string' ? AVISOS[sp.aviso] : undefined;
   const [todos, comEmail] = await Promise.all([
-    sql<Linha>('SELECT id, nome, email, perfil, ativo, senha_pendente, aguardando_aprovacao, criado_em FROM usuarios ORDER BY nome'),
+    // Os líderes de grupo ficam em Grupos → Líderes
+    sql<Linha>("SELECT id, nome, email, perfil, ativo, senha_pendente, aguardando_aprovacao, criado_em FROM usuarios WHERE perfil <> 'lider' ORDER BY nome"),
     emailPronto(),
   ]);
   const pedidos = todos.filter((u) => u.aguardando_aprovacao);
@@ -47,7 +48,11 @@ export default async function Usuarios({ searchParams }: { searchParams: Promise
       <section>
         <h1 className="mb-1 text-xl font-extrabold text-stone-900">Usuários do painel</h1>
         <p className="mb-4 text-sm text-stone-600">
-          <strong>Super admin</strong> vê tudo e cuida de usuários, auditoria e configurações. <strong>Admin</strong> vê, exporta e exclui visitas.
+          <strong>Super admin</strong> vê tudo e cuida de usuários, auditoria e configurações. <strong>Admin</strong> vê, exporta e exclui visitas. Os líderes de grupo ficam em{' '}
+          <Link href="/admin/grupos/lideres" className="font-semibold text-emerald-800 underline">
+            Grupos → Líderes
+          </Link>
+          .
         </p>
         {aviso && (
           <p className={`mb-4 rounded-lg p-3 text-sm font-semibold ${aviso.erro ? 'bg-red-50 text-red-800' : 'bg-emerald-50 text-emerald-900'}`} role="status">

@@ -1,11 +1,13 @@
 import Link from 'next/link';
 import { exigirUsuario } from '@/lib/auth';
+import { nomeDaOpcao, opcoesDeGrupo } from '@/lib/grupos';
 import FormularioNovaVisita from './FormularioNovaVisita';
 
 export const metadata = { title: 'Nova visita' };
 
 export default async function NovaVisita() {
   await exigirUsuario();
+  const grupos = (await opcoesDeGrupo()).map((g) => ({ valor: String(g.id), nome: nomeDaOpcao(g) }));
   return (
     <div className="mx-auto max-w-4xl space-y-4">
       <Link href="/admin" className="text-sm font-semibold text-emerald-800 underline">
@@ -24,7 +26,7 @@ export default async function NovaVisita() {
           .
         </p>
       </div>
-      <FormularioNovaVisita />
+      <FormularioNovaVisita grupos={grupos} />
       <p className="text-sm text-stone-500">O cadastro fica na auditoria com o seu nome.</p>
     </div>
   );

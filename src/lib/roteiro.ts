@@ -37,7 +37,7 @@ Para cada grupo, dê um nome curto que ajude a equipe a reconhecer a região (ba
 No resumo, escreva de 3 a 6 frases para a coordenação: quantas equipes são necessárias em cada dia e período, onde está a maior concentração de famílias e os pontos de atenção (períodos sobrecarregados, casas isoladas, endereços sem localização). Escreva em português do Brasil, em linguagem simples.`;
 
 // Posição em metros a partir do centro do setor (mais fácil de comparar do que latitude e longitude).
-function emMetros(v: Pick<Visita, 'lat' | 'lng'>): { x: number; y: number } | null {
+export function emMetros(v: Pick<Visita, 'lat' | 'lng'>): { x: number; y: number } | null {
   if (v.lat == null || v.lng == null) return null;
   return {
     x: Math.round((v.lng - CENTRO.lng) * 111_320 * Math.cos((CENTRO.lat * Math.PI) / 180)),
@@ -46,7 +46,7 @@ function emMetros(v: Pick<Visita, 'lat' | 'lng'>): { x: number; y: number } | nu
 }
 
 // Ordem de visita dentro do grupo: começa pela casa mais afastada e segue sempre para a mais próxima.
-function ordenar(ids: number[], posicoes: Map<number, { x: number; y: number } | null>): { ordem: number[]; distanciaM: number | null } {
+export function ordenar(ids: number[], posicoes: Map<number, { x: number; y: number } | null>): { ordem: number[]; distanciaM: number | null } {
   const comPosicao = ids.filter((id) => posicoes.get(id));
   const semPosicao = ids.filter((id) => !posicoes.get(id));
   if (comPosicao.length < 2) return { ordem: [...comPosicao, ...semPosicao], distanciaM: comPosicao.length ? 0 : null };
