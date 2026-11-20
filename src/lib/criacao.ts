@@ -25,8 +25,10 @@ export type NovaVisita = {
 
 export const texto = (v: unknown, max: number) => (typeof v === 'string' ? v.trim().replace(/\s+/g, ' ').slice(0, max) : '');
 
-// Normaliza os campos e devolve os erros por campo (chaves com os nomes do formulário público)
-export function validarNovaVisita(c: {
+// A parte do cadastro que não depende da visita: quem mora na casa e o endereço
+export type DadosDaFamilia = Omit<NovaVisita, 'data_visita' | 'periodo' | 'confirmar_contato'>;
+
+type CamposDaFamilia = {
   nome?: unknown;
   telefone?: unknown;
   rua?: unknown;
@@ -37,11 +39,11 @@ export function validarNovaVisita(c: {
   uf?: unknown;
   cep?: unknown;
   obs?: unknown;
-  dia?: unknown;
-  periodo?: unknown;
-  confirmar: boolean | null;
-}): { dados: NovaVisita; erros: Record<string, string> } {
-  const dados: NovaVisita = {
+};
+
+// Normaliza os campos e devolve os erros por campo (chaves com os nomes do formulário público)
+export function validarFamilia(c: CamposDaFamilia): { dados: DadosDaFamilia; erros: Record<string, string> } {
+  const dados: DadosDaFamilia = {
     responsavel: texto(c.nome, 120),
     telefone: texto(c.telefone, 20).replace(/\D/g, ''),
     endereco: texto(c.rua, 160),
@@ -52,15 +54,21 @@ export function validarNovaVisita(c: {
     uf: texto(c.uf, 30) || UF_PADRAO,
     cep: texto(c.cep, 10) || null,
     observacoes: texto(c.obs, 500) || null,
-    data_visita: texto(c.dia, 10),
-    periodo: texto(c.periodo, 10),
-    confirmar_contato: c.confirmar,
   };
   const erros: Record<string, string> = {};
   if (dados.responsavel.length < 3) erros.nome = 'Escreva o nome completo do responsável pela casa.';
   if (dados.telefone.length < 10 || dados.telefone.length > 11) erros.telefone = 'Escreva o telefone com DDD. Exemplo: (11) 91234-5678.';
   if (dados.endereco.length < 3) erros.rua = 'Escreva o nome da rua ou avenida.';
   if (!dados.numero) erros.numero = 'Escreva o número da casa.';
+  return { dados, erros };
+}
+
+export function validarNovaVisita(
+  c: CamposDaFamilia & { dia?: unknown; periodo?: unknown; confirmar: boolean | null },
+): { dados: NovaVisita; erros: Record<string, string> } {
+  const familia = validarFamilia(c);
+  const dados: NovaVisita = { ...familia.dados, data_visita: texto(c.dia, 10), periodo: texto(c.periodo, 10), confirmar_contato: c.confirmar };
+  const erros = familia.erros;
   if (!DIAS.some((d) => d.valor === dados.data_visita)) erros.dia = 'Escolha o dia da visita.';
   if (!PERIODOS.some((p) => p.valor === dados.periodo)) erros.periodo = 'Escolha o horário da visita.';
   return { dados, erros };

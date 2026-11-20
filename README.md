@@ -47,6 +47,12 @@ docker compose -f docker-compose.yml -f docker-compose.dev.yml up
   equipe já ligou e a família confirmou. Guarda quem marcou e quando; as famílias que pediram contato antes ficam em
   destaque ("Falta confirmar") até serem marcadas. Tem contador, filtro, colunas no Excel e, no MCP, o campo
   `visita_confirmada_por_telefone` e a ferramenta `marcar_visita_confirmada`.
+- **Lista geral** (`/admin/lista-geral`) e **Cadastro sem visita** (`/admin/lista-geral/novo`): para guardar a família
+  que não vai receber visita neste evento, só como base para os próximos. O cadastro sem visita fica numa tabela
+  separada (`cadastros`) e por isso não entra em nada do que controla as visitas (tela de visitas, contadores, mapa,
+  roteiros, portal oficial, confirmação, duplicidades e MCP). A lista geral junta as visitas deste evento com os
+  cadastros sem visita, tem busca, filtro, aviso de telefone repetido e planilha própria. Antes de gravar, o sistema
+  avisa se a família já está nas visitas ou na lista.
 - **Nova visita** (`/admin/visitas/nova`, botão no topo da lista de visitas): cadastro feito pela equipe, para pedidos
   recebidos por telefone, no papel ou pessoalmente. Mesmas regras do formulário público; antes de gravar mostra os
   cadastros parecidos (com todos os dados) e só grava com "É outra família: cadastrar mesmo assim". Fica na auditoria.

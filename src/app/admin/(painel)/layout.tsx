@@ -13,6 +13,7 @@ export default async function PainelLayout({ children }: { children: React.React
   const duplicidades = await totalDeDuplicidades();
   const links: { href: string; nome: string; aviso?: number; sobre?: string }[] = [
     { href: '/admin', nome: 'Visitas' },
+    { href: '/admin/lista-geral', nome: 'Lista geral' },
     { href: '/admin/duplicidades', nome: 'Duplicidades', aviso: duplicidades, sobre: 'Possíveis duplicidades para conferir' },
     { href: '/admin/mapa', nome: 'Mapa de calor' },
     { href: '/admin/site', nome: 'Site' },

@@ -1,6 +1,7 @@
 import { DIAS, PERIODOS } from "@/lib/config";
 
 // Campos de uma visita, usados na tela de editar e na de cadastrar pelo painel.
+// Com "semVisita", servem ao cadastro sem visita (lista geral): sai o bloco da visita e entra o motivo.
 
 export type DadosDaVisita = {
   responsavel: string;
@@ -15,6 +16,8 @@ export type DadosDaVisita = {
   periodo: string;
   // Na edição, "" = não informado. No cadastro, "" = ainda não escolheu e "ni" = não informado.
   confirmar: "" | "sim" | "nao" | "ni";
+  // Só no cadastro sem visita: por que a família não vai receber visita neste evento
+  motivo?: string;
 };
 
 export const VISITA_VAZIA: DadosDaVisita = {
@@ -112,10 +115,12 @@ export default function CamposDaVisita({
   v,
   erros,
   novo = false,
+  semVisita = false,
 }: {
   v: DadosDaVisita;
   erros: Record<string, string>;
   novo?: boolean;
+  semVisita?: boolean;
 }) {
   const escolha = novo ? [{ valor: "", nome: "Escolha…" }] : [];
   return (
@@ -148,6 +153,18 @@ export default function CamposDaVisita({
         </div>
       </fieldset>
 
+      {semVisita ? (
+        <fieldset>
+          <legend className="mb-2 text-lg font-extrabold text-stone-900">Sem visita neste evento</legend>
+          <Campo
+            nome="motivo"
+            rotulo="Por que não vai ter visita"
+            valor={v.motivo ?? ""}
+            max={200}
+            ajuda="Opcional. Exemplos: pediu depois do prazo, mora fora do setor, vai estar viajando."
+          />
+        </fieldset>
+      ) : (
       <fieldset className="grid gap-4 sm:grid-cols-3">
         <legend className="mb-2 text-lg font-extrabold text-stone-900">Visita</legend>
         <Escolha nome="data_visita" rotulo="Dia" valor={v.data_visita} erro={erros.data_visita} opcoes={[...escolha, ...DIAS.map((d) => ({ valor: d.valor, nome: d.curto }))]} />
@@ -165,6 +182,7 @@ export default function CamposDaVisita({
           ]}
         />
       </fieldset>
+      )}
     </div>
   );
 }

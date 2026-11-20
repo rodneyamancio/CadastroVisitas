@@ -130,6 +130,26 @@ CREATE TABLE IF NOT EXISTS duplicidades (
   UNIQUE (visita_id, outra_id)
 );
 
+-- Cadastros sem visita neste evento: famílias guardadas só para a lista geral (próximos eventos).
+-- Ficam em tabela separada para não entrar em nada do que controla as visitas
+-- (contadores, mapa, roteiros, portal oficial, confirmação, duplicidades e MCP).
+CREATE TABLE IF NOT EXISTS cadastros (
+  id SERIAL PRIMARY KEY,
+  responsavel TEXT NOT NULL,
+  telefone TEXT NOT NULL,
+  endereco TEXT NOT NULL,
+  numero TEXT NOT NULL,
+  complemento TEXT,
+  bairro TEXT,
+  cidade TEXT,
+  uf TEXT,
+  cep TEXT,
+  observacoes TEXT,
+  motivo TEXT,
+  criado_em TIMESTAMPTZ NOT NULL DEFAULT now(),
+  criado_por TEXT
+);
+
 -- Tokens de acesso ao servidor MCP (guardamos só o resumo). "visto_*" marca até onde
 -- o dono do token já viu as novidades.
 CREATE TABLE IF NOT EXISTS tokens_mcp (

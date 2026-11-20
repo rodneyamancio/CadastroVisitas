@@ -16,6 +16,13 @@ export default async function NovaVisita() {
         <p className="text-sm text-stone-600">
           Para pedidos recebidos por telefone, no papel ou pessoalmente. Antes de gravar, o sistema confere se a família já foi cadastrada.
         </p>
+        <p className="mt-1 text-sm text-stone-600">
+          A família não vai receber visita neste evento e é só para guardar o cadastro?{' '}
+          <Link href="/admin/lista-geral/novo" className="font-semibold text-emerald-800 underline">
+            Use o Cadastro sem visita
+          </Link>
+          .
+        </p>
       </div>
       <FormularioNovaVisita />
       <p className="text-sm text-stone-500">O cadastro fica na auditoria com o seu nome.</p>
