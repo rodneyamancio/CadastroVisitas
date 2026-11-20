@@ -2,6 +2,17 @@ import { McpServer, ResourceTemplate } from '@modelcontextprotocol/sdk/server/mc
 import { SubscribeRequestSchema, UnsubscribeRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 import { ACOES, CATEGORIAS, listarAuditoria, registrar } from '../auditoria';
+import {
+  conferirBairroDoCadastro,
+  criarCadastro,
+  editarCadastro,
+  familiasParecidas,
+  listaGeral,
+  resumoGeral,
+  validarCadastro,
+  type Cadastro,
+  type Familia,
+} from '../cadastros';
 import { DIAS, PERIODOS, PRECISOES, TITULO, nomeDia, nomePeriodo } from '../config';
 import { gravarVisita, processarNovaVisita, validarNovaVisita } from '../criacao';
 import { sql } from '../db';
@@ -23,6 +34,7 @@ const INSTRUCOES = `Servidor do "${TITULO}": cadastro de famílias que pediram v
 - Para saber o que chegou de novo, use "novidades": ela devolve só os cadastros recebidos desde a última consulta feita com este token.
 - Este sistema é paralelo ao portal oficial: cada visita informa em "portal_oficial" se já foi passada para lá. Para conferir os dados antes de passar, use "ver_visita"; depois de cadastrar no portal oficial, marque com "marcar_portal_oficial". Para cadastrar uma família nova, use "criar_visita"; para corrigir dados de um cadastro, use "editar_visita". "listar_visitas" com portal_oficial "falta" mostra o que ainda falta.
 - Cada visita informa em "entrar_em_contato_antes_para_confirmar" se a família pediu para ser avisada antes e, em "visita_confirmada_por_telefone", se a equipe já ligou e confirmou. Depois de ligar e a família confirmar, marque com "marcar_visita_confirmada". "listar_visitas" com confirmacao "pendente" mostra as que pediram contato e ainda faltam.
+- Família que NÃO vai receber visita neste evento e deve ficar guardada só para os próximos: use "criar_cadastro_sem_visita" (nunca "criar_visita") e, para corrigir, "editar_cadastro_sem_visita". Esses cadastros ficam separados: não aparecem em "listar_visitas", "resumo_visitas", "novidades" nem em nenhuma outra ferramenta de visitas. Só a "lista_geral" mostra tudo junto: as visitas deste evento e os cadastros sem visita.
 - "listar_visitas", "ver_visita" e "resumo_visitas" consultam as famílias cadastradas; "estatisticas_site" mostra quantas pessoas entraram no formulário e quantas concluíram.
 - Os dados são pessoais (nome, telefone, endereço): use só para organizar as visitas.
 - Datas e horas estão no horário de Brasília.`;
@@ -67,6 +79,54 @@ function visitaParaMcp(v: Visita, superAdmin: boolean) {
     posicao_no_mapa: temPonto ? { lat: v.lat, lng: v.lng, precisao: PRECISOES[v.precisao ?? ''] ?? v.precisao } : null,
     link_do_mapa: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(alvo)}`,
     ...(superAdmin ? { quem_cadastrou: { ip: v.ip, navegador: v.agente, ...(v.extra ?? {}) } } : {}),
+  };
+}
+
+// Cadastro sem visita (lista geral): família guardada só para os próximos eventos
+function cadastroParaMcp(c: Cadastro) {
+  return {
+    tipo: 'cadastro_sem_visita',
+    id: c.id,
+    responsavel: c.responsavel,
+    telefone: telefone(c.telefone),
+    telefone_so_numeros: c.telefone,
+    whatsapp: `https://wa.me/55${c.telefone}`,
+    endereco: enderecoCompleto(c),
+    rua: c.endereco,
+    numero: c.numero,
+    complemento: c.complemento,
+    bairro: c.bairro,
+    cidade: c.cidade,
+    uf: c.uf,
+    cep: c.cep,
+    como_achar_a_casa: c.observacoes,
+    por_que_nao_vai_ter_visita: c.motivo,
+    cadastrado_em: quando(c.criado_em),
+    cadastrado_por: c.criado_por,
+  };
+}
+
+// Uma linha da lista geral: visita deste evento ou cadastro sem visita
+function familiaParaMcp(f: Familia) {
+  return {
+    tipo: f.tipo === 'visita' ? 'visita' : 'cadastro_sem_visita',
+    id: f.id,
+    situacao: f.tipo === 'visita' ? `com visita neste evento: ${nomeDia(f.data_visita ?? '')} · ${nomePeriodo(f.periodo ?? '')}` : 'sem visita neste evento',
+    responsavel: f.responsavel,
+    telefone: telefone(f.telefone),
+    telefone_so_numeros: f.telefone,
+    telefone_repetido_na_lista: f.mesmo_telefone > 1,
+    endereco: enderecoCompleto(f),
+    rua: f.endereco,
+    numero: f.numero,
+    complemento: f.complemento,
+    bairro: f.bairro,
+    cidade: f.cidade,
+    uf: f.uf,
+    cep: f.cep,
+    como_achar_a_casa: f.observacoes,
+    ...(f.tipo === 'cadastro' ? { por_que_nao_vai_ter_visita: f.motivo, cadastrado_por: f.criado_por } : {}),
+    cadastrado_em: quando(f.criado_em),
   };
 }
 
@@ -621,6 +681,190 @@ export function criarServidor(dono: DonoDoToken, assinaturas: Set<string>): McpS
       return texto(
         { gravado: true, visita: visitaParaMcp(nova, superAdmin) },
         `Cadastro nº ${nova.id} criado: ${nova.responsavel}, ${nomeDia(nova.data_visita)} · ${nomePeriodo(nova.periodo)}. O bairro, a posição no mapa e a duplicidade são conferidos em seguida; veja com "ver_visita" daqui a alguns segundos.`,
+      );
+    },
+  );
+
+  // ---------- Cadastro sem visita e lista geral ----------
+
+  servidor.registerTool(
+    'lista_geral',
+    {
+      title: 'Lista geral de famílias',
+      description:
+        'Lista geral de famílias, base para os próximos eventos: junta as visitas deste evento com os cadastros sem visita (famílias que não vão receber visita agora). Cada item traz "tipo": "visita" (o "id" vale em "ver_visita" e "editar_visita") ou "cadastro_sem_visita" (o "id" vale em "editar_cadastro_sem_visita"); as duas numerações são separadas. "telefone_repetido_na_lista" avisa quando o mesmo telefone aparece em mais de uma linha. Em ordem alfabética; devolve no máximo "limite" itens por página.',
+      inputSchema: {
+        busca: z.string().max(100).optional().describe('Trecho do nome, da rua, do bairro, do telefone, das observações ou do motivo'),
+        situacao: z
+          .enum(['com_visita', 'sem_visita', 'telefone_repetido'])
+          .optional()
+          .describe('com_visita: só as visitas deste evento; sem_visita: só os cadastros sem visita; telefone_repetido: só as linhas com telefone que aparece mais de uma vez'),
+        limite: z.number().int().min(1).max(200).optional().describe('Padrão: 50'),
+        pagina: z.number().int().min(1).optional().describe('Padrão: 1'),
+      },
+      annotations: { title: 'Lista geral de famílias', ...leitura },
+    },
+    async (a) => {
+      const [todas, geral] = await Promise.all([
+        listaGeral({
+          q: a.busca?.trim() || undefined,
+          tipo: a.situacao === 'com_visita' ? 'visita' : a.situacao === 'sem_visita' ? 'cadastro' : undefined,
+          repetidos: a.situacao === 'telefone_repetido' || undefined,
+        }),
+        resumoGeral(),
+      ]);
+      const limite = a.limite ?? 50;
+      const pagina = a.pagina ?? 1;
+      const linhas = todas.slice((pagina - 1) * limite, pagina * limite);
+      await anotar('lista_geral', { filtros: Object.keys(a).length ? a : 'nenhum', devolvidas: linhas.length });
+      return texto(
+        {
+          lista_geral: { familias: geral.visitas + geral.semVisita, com_visita_neste_evento: geral.visitas, sem_visita: geral.semVisita },
+          total: todas.length,
+          pagina,
+          paginas: Math.max(1, Math.ceil(todas.length / limite)),
+          familias: linhas.map(familiaParaMcp),
+        },
+        `${todas.length} ${todas.length === 1 ? 'família encontrada' : 'famílias encontradas'}; ${linhas.length} nesta página. Na lista geral: ${geral.visitas} com visita neste evento e ${geral.semVisita} sem visita.`,
+      );
+    },
+  );
+
+  servidor.registerTool(
+    'criar_cadastro_sem_visita',
+    {
+      title: 'Cadastrar família sem visita',
+      description:
+        'Guarda na lista geral uma família que NÃO vai receber visita neste evento, só como cadastro para os próximos. Não entra nas visitas: não aparece em "listar_visitas", "resumo_visitas", "novidades", no mapa, nos roteiros nem no portal oficial; só em "lista_geral". Para família que vai receber visita, use "criar_visita". Obrigatórios: responsável (nome completo), telefone com DDD, rua e número (ou S/N). Antes de gravar, o sistema procura a família nas visitas deste evento e nos cadastros sem visita (nome, telefone ou endereço): se achar, NÃO grava e devolve o que achou. Confira com quem pediu; se for mesmo outra família, chame de novo com "mesmo_assim": true. Fica na auditoria com o nome de quem cadastrou.',
+      inputSchema: {
+        responsavel: z.string().max(120).describe('Nome completo do responsável pela casa'),
+        telefone: z.string().max(20).describe('Com DDD. Exemplo: (11) 91234-5678'),
+        rua: z.string().max(160).describe('Rua ou avenida'),
+        numero: z.string().max(12).describe('Número da casa, ou S/N'),
+        complemento: z.string().max(120).optional(),
+        bairro: z.string().max(80).optional().describe('Se não informar, o sistema descobre pela rua'),
+        cep: z.string().max(10).optional(),
+        como_achar_a_casa: z.string().max(500).optional().describe('Ponto de referência, cor do portão etc.'),
+        por_que_nao_vai_ter_visita: z.string().max(200).optional().describe('Exemplos: pediu depois do prazo, mora fora do setor, vai estar viajando'),
+        mesmo_assim: z.boolean().optional().describe('true para gravar mesmo havendo família parecida na lista geral, depois de confirmar que é outra família'),
+      },
+      annotations: { title: 'Cadastrar família sem visita', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+    },
+    async (a) => {
+      const { dados, erros } = validarCadastro({
+        responsavel: a.responsavel,
+        telefone: a.telefone,
+        endereco: a.rua,
+        numero: a.numero,
+        complemento: a.complemento,
+        bairro: a.bairro,
+        cep: a.cep,
+        observacoes: a.como_achar_a_casa,
+        motivo: a.por_que_nao_vai_ter_visita,
+      });
+      if (Object.keys(erros).length) return falha(`Confira os dados: ${Object.values(erros).join(' ')}`);
+      const origem = `MCP (token ${dono.nomeDoToken})`;
+
+      // Família parecida nas visitas ou nos cadastros sem visita: não grava sem a confirmação de que é outra
+      const achadas = await familiasParecidas(dados).catch((e) => {
+        console.error('Falha ao procurar família parecida', e);
+        return { visitas: [], cadastros: [] };
+      });
+      const quantas = achadas.visitas.length + achadas.cadastros.length;
+      if (quantas && !a.mesmo_assim) {
+        const completas = achadas.visitas.length ? await sql<Visita>('SELECT * FROM visitas WHERE id = ANY($1::int[])', [achadas.visitas.map((p) => p.id)]) : [];
+        const porId = new Map(completas.map((v) => [v.id, v]));
+        await registrar('cadastro.duplicidade.aviso', dono, dados.responsavel, {
+          origem,
+          endereço: `${dados.endereco}, ${dados.numero}`,
+          'parecido com': [
+            ...achadas.visitas.map((p) => `Visita nº ${p.id} (${p.motivos.join(', ')})`),
+            ...achadas.cadastros.map((p) => `Cadastro sem visita nº ${p.cadastro.id} (${p.motivos.join(', ')})`),
+          ].join(' · '),
+        });
+        return texto(
+          {
+            gravado: false,
+            familias_parecidas: [
+              ...achadas.visitas.flatMap((p) => {
+                const v = porId.get(p.id);
+                return v ? [{ o_que_e_parecido: p.motivos, situacao: 'já tem visita neste evento (já está na lista geral)', visita: visitaParaMcp(v, superAdmin) }] : [];
+              }),
+              ...achadas.cadastros.map((p) => ({ o_que_e_parecido: p.motivos, situacao: 'já está na lista geral, sem visita', cadastro_sem_visita: cadastroParaMcp(p.cadastro) })),
+            ],
+          },
+          `Nada foi gravado: ${quantas === 1 ? 'há 1 família parecida' : `há ${quantas} famílias parecidas`} na lista geral. Confira se é a mesma família. Se for outra, chame "criar_cadastro_sem_visita" de novo com os mesmos dados e "mesmo_assim": true.`,
+        );
+      }
+
+      const novo = await criarCadastro(dados, `${dono.nome} (MCP, token ${dono.nomeDoToken})`);
+      await registrar('cadastro.criado', dono, `Sem visita nº ${novo.id} · ${novo.responsavel}`, {
+        origem,
+        endereço: `${novo.endereco}, ${novo.numero}`,
+        telefone: telefone(novo.telefone),
+        ...(novo.motivo ? { 'por que não vai ter visita': novo.motivo } : {}),
+        ...(quantas ? { 'aviso de família parecida': 'confirmou que é outra família' } : {}),
+      });
+      // Bairro pelos Correios quando ficou em branco (sem prender a resposta)
+      void conferirBairroDoCadastro(novo.id, false).catch((e) => console.error('Falha ao conferir bairro do cadastro', novo.id, e));
+      return texto(
+        { gravado: true, cadastro_sem_visita: cadastroParaMcp(novo) },
+        `Cadastro sem visita nº ${novo.id} criado: ${novo.responsavel}. Ele aparece só na "lista_geral"; não entra nas visitas deste evento.${novo.bairro ? '' : ' O bairro é conferido pela rua em seguida.'}`,
+      );
+    },
+  );
+
+  servidor.registerTool(
+    'editar_cadastro_sem_visita',
+    {
+      title: 'Alterar cadastro sem visita',
+      description:
+        'Altera os dados de um cadastro sem visita (da lista geral). Informe o número em "id" (o de "tipo": "cadastro_sem_visita" na "lista_geral") e só os campos que devem mudar; os outros ficam como estão. Para apagar um campo opcional (complemento, bairro, CEP, como achar a casa, motivo), mande texto vazio. Não serve para visitas: para elas use "editar_visita". Fica na auditoria com o valor de antes e o de depois.',
+      inputSchema: {
+        id: z.number().int().positive().describe('Número do cadastro sem visita'),
+        responsavel: z.string().max(120).optional(),
+        telefone: z.string().max(20).optional().describe('Com DDD'),
+        rua: z.string().max(160).optional(),
+        numero: z.string().max(12).optional().describe('Número da casa, ou S/N'),
+        complemento: z.string().max(120).optional(),
+        bairro: z.string().max(80).optional(),
+        cep: z.string().max(10).optional(),
+        como_achar_a_casa: z.string().max(500).optional(),
+        por_que_nao_vai_ter_visita: z.string().max(200).optional(),
+      },
+      annotations: { title: 'Alterar cadastro sem visita', readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    },
+    async (a) => {
+      const pedido = {
+        responsavel: a.responsavel,
+        telefone: a.telefone,
+        endereco: a.rua,
+        numero: a.numero,
+        complemento: a.complemento,
+        bairro: a.bairro,
+        cep: a.cep,
+        observacoes: a.como_achar_a_casa,
+        motivo: a.por_que_nao_vai_ter_visita,
+      };
+      const informados = Object.fromEntries(Object.entries(pedido).filter(([, v]) => v !== undefined));
+      if (!Object.keys(informados).length) return falha('Informe pelo menos um campo para alterar, além do "id".');
+      const [atual] = await sql<Cadastro>('SELECT * FROM cadastros WHERE id = $1', [a.id]);
+      if (!atual) return falha(`Não existe cadastro sem visita com o número ${a.id}. Veja os números em "lista_geral" com situacao "sem_visita".`);
+      const { dados, erros } = validarCadastro({ ...atual, ...informados });
+      if (Object.keys(erros).length) return falha(`Confira os dados: ${Object.values(erros).join(' ')}`);
+      const r = await editarCadastro(a.id, dados);
+      if ('erro' in r) return falha(r.erro);
+      if (r.mudancas.length) {
+        await registrar('cadastro.editado', dono, `Sem visita nº ${r.cadastro.id} · ${r.cadastro.responsavel}`, {
+          origem: `MCP (token ${dono.nomeDoToken})`,
+          ...Object.fromEntries(r.mudancas.map((m) => [m.campo, `${m.antes} → ${m.depois}`])),
+        });
+      }
+      return texto(
+        { alteracoes: r.mudancas, cadastro_sem_visita: cadastroParaMcp(r.cadastro) },
+        r.mudancas.length
+          ? `${r.mudancas.length} ${r.mudancas.length === 1 ? 'campo alterado' : 'campos alterados'} no cadastro sem visita nº ${r.cadastro.id}.`
+          : 'Nada mudou: os dados já estavam assim.',
       );
     },
   );

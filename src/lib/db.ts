@@ -132,7 +132,7 @@ CREATE TABLE IF NOT EXISTS duplicidades (
 
 -- Cadastros sem visita neste evento: famílias guardadas só para a lista geral (próximos eventos).
 -- Ficam em tabela separada para não entrar em nada do que controla as visitas
--- (contadores, mapa, roteiros, portal oficial, confirmação, duplicidades e MCP).
+-- (contadores, mapa, roteiros, portal oficial, confirmação, duplicidades e as ferramentas de visitas do MCP).
 CREATE TABLE IF NOT EXISTS cadastros (
   id SERIAL PRIMARY KEY,
   responsavel TEXT NOT NULL,

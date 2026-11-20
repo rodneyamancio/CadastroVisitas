@@ -50,7 +50,7 @@ docker compose -f docker-compose.yml -f docker-compose.dev.yml up
 - **Lista geral** (`/admin/lista-geral`) e **Cadastro sem visita** (`/admin/lista-geral/novo`): para guardar a família
   que não vai receber visita neste evento, só como base para os próximos. O cadastro sem visita fica numa tabela
   separada (`cadastros`) e por isso não entra em nada do que controla as visitas (tela de visitas, contadores, mapa,
-  roteiros, portal oficial, confirmação, duplicidades e MCP). A lista geral junta as visitas deste evento com os
+  roteiros, portal oficial, confirmação, duplicidades e as ferramentas de visitas do MCP). A lista geral junta as visitas deste evento com os
   cadastros sem visita, tem busca, filtro, aviso de telefone repetido e planilha própria. Antes de gravar, o sistema
   avisa se a família já está nas visitas ou na lista.
 - **Nova visita** (`/admin/visitas/nova`, botão no topo da lista de visitas): cadastro feito pela equipe, para pedidos
@@ -94,7 +94,7 @@ claude mcp add --transport http missao-fraternal https://SEU-DOMINIO/api/mcp --h
 
 - **Ferramentas**: `novidades` (o que chegou desde a última consulta com o mesmo token), `listar_visitas`,
   `ver_visita` (todos os dados, pelo número ou por nome, telefone ou rua), `criar_visita` (cadastra uma família nova, com a mesma conferência de duplicidade do formulário), `editar_visita` (altera os dados de um
-  cadastro), `marcar_portal_oficial` (marca ou desmarca o que já foi migrado), `possiveis_duplicidades`, `resumo_visitas`, `estatisticas_site`, `ultimo_roteiro` e `conferir_bairros`. Para o super admin:
+  cadastro), `marcar_portal_oficial` (marca ou desmarca o que já foi migrado), `possiveis_duplicidades`, `lista_geral` (visitas deste evento junto com os cadastros sem visita), `criar_cadastro_sem_visita`, `editar_cadastro_sem_visita`, `resumo_visitas`, `estatisticas_site`, `ultimo_roteiro` e `conferir_bairros`. Para o super admin:
   `pedidos_de_acesso`, `aprovar_pedido`, `recusar_pedido`, `listar_usuarios` e `auditoria`.
 - **Recursos**: `missao://visitas/recentes`, `missao://visitas/resumo`, `missao://visitas/{id}` e, para o super
   admin, `missao://usuarios/pedidos`.

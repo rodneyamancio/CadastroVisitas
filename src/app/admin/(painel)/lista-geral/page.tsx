@@ -47,7 +47,7 @@ export default async function ListaGeral({ searchParams }: { searchParams: Promi
         <h1 className="text-xl font-extrabold text-stone-900">Lista geral de famílias</h1>
         <p className="max-w-3xl text-sm text-stone-600">
           Junta as visitas deste evento com os cadastros sem visita, para servir de base nos próximos eventos. Os cadastros sem visita aparecem só aqui: não
-          entram na tela de visitas, nos contadores, no mapa, nos roteiros, no portal oficial nem no MCP.
+          entram na tela de visitas, nos contadores, no mapa, nos roteiros nem no portal oficial.
         </p>
       </div>
 

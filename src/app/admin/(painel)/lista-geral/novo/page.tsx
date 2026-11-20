@@ -15,7 +15,7 @@ export default async function NovoCadastroSemVisita() {
         <h1 className="text-xl font-extrabold text-stone-900">Cadastro sem visita</h1>
         <p className="text-sm text-stone-600">
           Para a família que não vai receber visita neste evento, mas deve ficar guardada para os próximos. Este cadastro aparece só na lista geral: não
-          entra nas visitas, nos contadores, no mapa, nos roteiros, no portal oficial nem no MCP.
+          entra nas visitas, nos contadores, no mapa, nos roteiros nem no portal oficial.
         </p>
         <p className="mt-1 text-sm text-stone-600">
           A família vai receber visita?{' '}
